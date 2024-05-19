@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Images</title>
+    <link rel="stylesheet" href="/styles/review.css">
+    <style>
+        .image-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .image-container img {
+            max-width: 100%;
+        }
+        .sliders {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+        .sliders label {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Review Images</h1>
+        <div class="order-items">
+            <% Object.keys(items).forEach(order_item_id => { %>
+                <div class="order-item">
+                    <h2><%= items[order_item_id].itemName %></h2>
+                    <div class="images">
+                        <% items[order_item_id].images.forEach((image, index) => { %>
+                            <div class="image-container">
+                                <h3>Image <%= index + 1 %></h3>
+                                <img
+                                    id="image-<%= order_item_id %>-<%= index %>"
+                                    src="/processed-uploads/<%= image %>"
+                                    alt="Order Image"
+                                    data-order-item-id="<%= order_item_id %>"
+                                    data-index="<%= index %>"
+                                    data-filename="<%= image %>"
+                                >
+                                <div class="sliders">
+                                    <label for="brightness-<%= order_item_id %>-<%= index %>">Brightness:</label>
+                                    <input
+                                        type="range"
+                                        id="brightness-<%= order_item_id %>-<%= index %>"
+                                        min="-100"
+                                        max="100"
+                                        value="0"
+                                        data-order-item-id="<%= order_item_id %>"
+                                        data-index="<%= index %>"
+                                        oninput="updateImage(this)"
+                                    >
+                                    <label for="contrast-<%= order_item_id %>-<%= index %>">Contrast:</label>
+                                    <input
+                                        type="range"
+                                        id="contrast-<%= order_item_id %>-<%= index %>"
+                                        min="-100"
+                                        max="100"
+                                        value="0"
+                                        data-order-item-id="<%= order_item_id %>"
+                                        data-index="<%= index %>"
+                                        oninput="updateImage(this)"
+                                    >
+                                </div>
+                            </div>
+                        <% }) %>
+                    </div>
+                    <p>Cost: $<%= items[order_item_id].itemPrice.toFixed(2) %></p>
+                </div>
+            <% }) %>
+        </div>
+        <button class="complete">Confirm and Proceed</button>
+    </div>
+
+    <script>
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        function updateImage(slider) {
+            const order_item_id = slider.getAttribute('data-order-item-id');
+            const index = slider.getAttribute('data-index');
+            const brightness = document.getElementById(`brightness-${order_item_id}-${index}`).value;
+            const contrast = document.getElementById(`contrast-${order_item_id}-${index}`).value;
+
+            debounceProcessAndUpdateImage(order_item_id, index, brightness, contrast);
+        }
+
+        const debounceProcessAndUpdateImage = debounce((order_item_id, index, brightness, contrast) => {
+            const img = document.getElementById(`image-${order_item_id}-${index}`);
+
+            fetch(`/process-image`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename: img.dataset.filename,
+                    brightness: brightness / 100, // Adjust to Jimp scale
+                    contrast: contrast / 100, // Adjust to Jimp scale,
+                    orderItemId: img.dataset.orderItemId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    img.src = `/finalized-uploads/${data.filename}?t=${new Date().getTime()}`;
+                } else {
+                    console.error('Error processing image:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error processing image:', error);
+            });
+        }, 500); // Adjust the debounce delay as needed
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const confirmButton = document.querySelector('.complete');
+
+            confirmButton.addEventListener('click', processImagesAndRedirect);
+
+            function processImagesAndRedirect() {
+                const images = document.querySelectorAll('.image-container img');
+                const promises = Array.from(images).map((img, index) => {
+                    return new Promise((resolve, reject) => {
+                        const brightness = document.getElementById(`brightness-${img.dataset.orderItemId}-${img.dataset.index}`).value;
+                        const contrast = document.getElementById(`contrast-${img.dataset.orderItemId}-${img.dataset.index}`).value;
+
+                        fetch(`/process-image`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                filename: img.dataset.filename,
+                                brightness: brightness / 100, // Adjust to Jimp scale
+                                contrast: contrast / 100, // Adjust to Jimp scale,
+                                orderItemId: img.dataset.orderItemId
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                resolve();
+                            } else {
+                                reject(data.error);
+                            }
+                        })
+                        .catch(reject);
+                    });
+                });
+
+                Promise.all(promises)
+                    .then(() => {
+                        window.location.href = `/checkout?orderID=<%= orderID %>`;
+                    })
+                    .catch(error => {
+                        console.error('Error processing images:', error);
+                    });
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+

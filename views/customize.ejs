@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customize</title>
+    <link rel="stylesheet" href="/styles/customize.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="thumbnail-section">
+            <% if (bundle === 'lightbox') { %>
+                <div class="thumbnail" id="thumb1"></div>
+                <div class="thumbnail" id="thumb2"></div>
+                <div class="thumbnail" id="thumb3"></div>
+                <div class="thumbnail" id="thumb4"></div>
+                <div class="thumbnail" id="thumb5"></div>
+            <% } else if (bundle === 'individual') { %>
+                <div class="thumbnail" id="thumb1"></div>
+            <% } %>
+        </div>
+
+        <div class="upload-section">
+            <input type="file" id="uploadPhoto" accept="image/*">
+            <div id="cropper-container"></div>
+        </div>
+
+        <div class="settings-section">
+            <label for="aspectRatioSelect">Aspect Ratio:</label>
+            <select id="aspectRatioSelect">
+                <% if (bundle === 'lightbox') { %>
+                    <option value="4x4">4x4</option>
+                <% } else if (bundle === 'individual') { %>
+                    <option value="4x4">4x4</option>
+                    <option value="4x6">4x6</option>
+                    <option value="6x4">6x4</option>
+                <% } %>
+            </select>
+
+            <label for="hangarsToggle">Hangars:</label>
+            <select id="hangarsToggle">
+                <% if (bundle === 'lightbox') { %>
+                    <option value="no">No Hangars</option>
+                <% } else if (bundle === 'individual') { %>
+                    <option value="no">No Hangars</option>
+                    <option value="yes">With Hangars</option>
+                <% } %>
+            </select>
+        </div>
+
+        <div class="button-section">
+            <button id="processAndUploadNext">Process and Upload Next</button>
+            <button id="processAndCheckout" style="display: none;">Process and Proceed to Checkout</button>
+        </div>
+    </div>
+
+    <script>
+        const bundle = '<%= bundle %>';
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.js"></script>
+    <script src="/scripts/customize.js"></script>
+</body>
+</html>
+

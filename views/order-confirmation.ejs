@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmation</title>
+    <link rel="stylesheet" href="/styles/order-confirmation.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Confirmation</h1>
+        <p>First Name: <%= customerDetails.name.split(' ')[0] %></p>
+        <p>Last Name: <%= customerDetails.name.split(' ').slice(1).join(' ') %></p>
+        <p>Email: <%= customerDetails.email %></p>
+        <p>Phone Number: <%= customerDetails.phone %></p>
+        <p>Address 1: <%= customerDetails.address1 %></p>
+        <p>Address 2: <%= customerDetails.address2 %></p>
+        <p>City: <%= customerDetails.city %></p>
+        <p>State: <%= customerDetails.state %></p>
+        <p>Zip: <%= customerDetails.zip %></p>
+        <p>Card Ending in: <%= orderDetails.card_last4 %></p>
+        <p>Order Number: <%= orderDetails.id %></p>
+        <p>Estimated Completion: <%= new Date(orderDetails.order_date).toLocaleDateString() %></p>
+
+        <h2>Cart Summary</h2>
+        <p>Subtotal: $<span><%= orderDetails.subtotal.toFixed(2) %></span></p>
+        <p>Shipping: $<span><%= orderDetails.shipping.toFixed(2) %></span></p>
+        <p>Tax: $<span><%= orderDetails.tax.toFixed(2) %></span></p>
+        <p>Total: $<span><%= orderDetails.total.toFixed(2) %></span></p>
+        <button onclick="window.location.href='/'">New Order</button>
+    </div>
+</body>
+</html>
+
+
+
+
+
+
