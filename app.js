@@ -308,6 +308,7 @@ app.get('/checkout', async (req, res) => {
 
     try {
         const orderDetails = await getOrderDetails(orderID);
+        console.log('Order details:', orderDetails);
         if (!orderDetails) {
             res.status(404).send('Order not found');
             return;
@@ -331,6 +332,8 @@ app.get('/checkout', async (req, res) => {
         res.status(500).send('Server error');
     }
 });
+
+
 
 function calculateSubtotal(items) {
     return Object.values(items).reduce((sum, item) => sum + item.itemPrice, 0);
@@ -430,7 +433,8 @@ function calculateTotalAmount(orderDetails) {
 
 async function getOrderDetails(orderID) {
     const query = `
-        SELECT co.*, c.*, oi.id AS order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars
+        SELECT co.*, c.name as customer_name, oi.id AS order_item_id, oi.item_price, 
+               oii.image_filepath, oi.has_hangars
         FROM customer_order co
         LEFT JOIN customer c ON co.customer_id = c.id
         LEFT JOIN order_item oi ON co.id = oi.order_id
@@ -453,7 +457,7 @@ async function getOrderDetails(orderID) {
         order_total: results[0].order_total,
         stripe_order_id: results[0].stripe_order_id,
         customer: {
-            name: results[0].name,
+            name: results[0].customer_name,
             email: results[0].email,
             phone: results[0].phone,
             address1: results[0].address1,
@@ -466,14 +470,14 @@ async function getOrderDetails(orderID) {
     };
 
     results.forEach(result => {
-        if (result.order_item_id) {
-            order.items.push({
-                order_item_id: result.order_item_id,
-                item_price: result.item_price,
-                image_filepath: result.image_filepath,
-                hasHangars: result.hasHangars
-            });
-        }
+        order.items.push({
+            itemID: result.order_item_id,
+            itemPrice: result.item_price,
+            photoSize: '4x6', // Example, adjust according to your data
+            hanger: result.has_hangars,
+            imageFile: result.image_filepath,
+            printed: false // Add this flag if required
+        });
     });
 
     order.subtotal = calculateSubtotal(order.items);
@@ -484,6 +488,9 @@ async function getOrderDetails(orderID) {
     console.log('Order details:', order);
     return order;
 }
+
+
+
 
 
 
@@ -686,9 +693,7 @@ app.post('/api/resend-stl', async (req, res) => {
             images: results.map(result => result.image_filepath)
         };
 
-        connectedClients.forEach(client => {
-            client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: [item] }));
-        });
+        notifySTLGeneration(orderID)
 
         res.json({ success: true });
     } catch (error) {

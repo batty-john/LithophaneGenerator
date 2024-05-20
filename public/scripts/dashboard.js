@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadOrders('processing');
     });
 
-    document.getElementById('filter-completed').addEventListener('click', () => {
+    document.getElementById('filter-pending').addEventListener('click', () => {
         loadOrders('completed_pending');
     });
 
@@ -43,7 +43,7 @@ function loadOrders(filter = null, search = '') {
                     <td>${order.name}</td>
                     <td>${order.orderID}</td>
                     <td>${order.order_total}</td>
-                    <td>${order.order_status}</td>
+                    <td>${order.paymentStatus}</td>
                     <td>${order.pictureCount}</td>
                     <td>${order.boxIncluded}</td>
                     <td>${order.order_status}</td>
@@ -52,6 +52,16 @@ function loadOrders(filter = null, search = '') {
                     toggleOrderDetails(order.orderID);
                 });
                 ordersTable.appendChild(orderRow);
+
+                const detailsRow = document.createElement('tr');
+                detailsRow.classList.add('order-details');
+                detailsRow.style.display = 'none';
+                detailsRow.innerHTML = `
+                    <td colspan="7">
+                        <div id="order-details-${order.orderID}">Loading...</div>
+                    </td>
+                `;
+                ordersTable.appendChild(detailsRow);
             });
         })
         .catch(error => {
@@ -60,45 +70,40 @@ function loadOrders(filter = null, search = '') {
 }
 
 function toggleOrderDetails(orderID) {
-    const orderDetailsRow = document.getElementById(`order-details-${orderID}`);
-    if (orderDetailsRow) {
-        orderDetailsRow.style.display = orderDetailsRow.style.display === 'none' ? 'table-row' : 'none';
+    const detailsRow = document.querySelector(`#order-details-${orderID}`).parentElement.parentElement;
+    if (detailsRow.style.display === 'none') {
+        detailsRow.style.display = '';
+        loadOrderDetails(orderID);
     } else {
-        fetch(`/api/order/${orderID}`)
-            .then(response => response.json())
-            .then(order => {
-                const orderDetailsRow = document.createElement('tr');
-                orderDetailsRow.id = `order-details-${orderID}`;
-                orderDetailsRow.innerHTML = `
-                    <td colspan="7">
-                        <div class="order-details">
-                            <div class="items">
-                                ${order.items ? order.items.map(item => `
-                                    <div class="item">
-                                        <img src="/finalized-uploads/${item.image_filepath}" alt="Image">
-                                        <p>Photo Size: ${item.photoSize}</p>
-                                        <p>Hanger: ${item.hasHangars ? 'Y' : 'N'}</p>
-                                        <button onclick="resendSTL(${orderID}, ${item.order_item_id})">Resend STL</button>
-                                        <a href="/finalized-uploads/${item.image_filepath}" target="_blank">View Final Image</a>
-                                    </div>
-                                `).join('') : 'No items found.'}
-                            </div>
-                            <label>
-                                <input type="checkbox" onchange="updateOrderStatus(${orderID}, 'completed_pending', this.checked)"> Order Complete
-                            </label>
-                            <label>
-                                <input type="checkbox" onchange="updateOrderStatus(${orderID}, 'completed_delivered', this.checked)"> Order Picked Up
-                            </label>
-                        </div>
-                    </td>
-                `;
-                const ordersTable = document.getElementById('orders');
-                ordersTable.appendChild(orderDetailsRow);
-            })
-            .catch(error => {
-                console.error('Error fetching order details:', error);
-            });
+        detailsRow.style.display = 'none';
     }
+}
+
+function loadOrderDetails(orderID) {
+    fetch(`/api/order/${orderID}`)
+        .then(response => response.json())
+        .then(order => {
+            console.log('Fetched order details:', order);
+            const orderDetailsDiv = document.getElementById(`order-details-${orderID}`);
+            if (order.items && Array.isArray(order.items)) {
+                orderDetailsDiv.innerHTML = order.items.map(item => `
+                    <div class="item">
+                        <h4>Photo Size: ${item.photoSize}</h4>
+                        <p>Hanger: ${item.hanger ? 'Y' : 'N'}</p>
+                        <button onclick="resendSTL(${order.id}, ${item.itemID})">Resend STL</button>
+                        <a href="/finalized-uploads/${item.imageFile}" target="_blank">View Finalized Image</a>
+                        <label>
+                            <input type="checkbox" ${item.printed ? 'checked' : ''} onclick="togglePrinted(${order.id}, ${item.itemID}, this.checked)"> Printed
+                        </label>
+                    </div>
+                `).join('');
+            } else {
+                orderDetailsDiv.innerHTML = '<p>No items found for this order.</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching order details:', error);
+        });
 }
 
 function resendSTL(orderID, itemID) {
@@ -122,31 +127,23 @@ function resendSTL(orderID, itemID) {
     });
 }
 
-function updateOrderStatus(orderID, status, isChecked) {
-    if (isChecked) {
-        fetch(`/api/order-status`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ orderID, status })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert(`Order status updated to ${status}`);
-            } else {
-                alert('Failed to update order status');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-    }
+function togglePrinted(orderID, itemID, printed) {
+    fetch(`/api/toggle-printed`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ orderID, itemID, printed })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('Printed status updated successfully');
+        } else {
+            alert('Failed to update printed status');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
 }
-
-
-
-
-
-
