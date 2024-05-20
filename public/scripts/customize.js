@@ -6,11 +6,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const processAndUploadNextButton = document.getElementById('processAndUploadNext');
     const processAndCheckoutButton = document.getElementById('processAndCheckout');
     const thumbnailSection = document.querySelector('.thumbnail-section');
+    const loadingIndicator = document.createElement('div');
 
     let cropper;
     let imagesData = [];
     let currentImageIndex = 0;
-    let maxImages = bundle === 'lightbox' ? 5 : 1;
+    const maxImages = bundle === 'lightbox' ? 5 : 1;
+
+    loadingIndicator.id = 'loadingIndicator';
+    loadingIndicator.innerText = 'Processing... Please wait.';
+    loadingIndicator.style.display = 'none';
+    loadingIndicator.style.position = 'fixed';
+    loadingIndicator.style.top = '50%';
+    loadingIndicator.style.left = '50%';
+    loadingIndicator.style.transform = 'translate(-50%, -50%)';
+    loadingIndicator.style.padding = '20px';
+    loadingIndicator.style.backgroundColor = '#fff';
+    loadingIndicator.style.border = '1px solid #ccc';
+    loadingIndicator.style.zIndex = '1000';
+    document.body.appendChild(loadingIndicator);
 
     console.log('Initial setup:');
     console.log('Bundle:', bundle);
@@ -73,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (bundle === 'individual') {
                         addThumbnail(currentImageIndex, dataUrl);
                         currentImageIndex++;
-                        maxImages++;
                     } else {
                         updateThumbnail(currentImageIndex, dataUrl);
                         currentImageIndex++;
@@ -88,26 +101,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function processAndProceedToCheckout() {
-        if (bundle === 'lightbox' && currentImageIndex < maxImages - 1) {
-            processAndUploadNext();
-        } else {
-            const orderData = {
-                images: imagesData
-            };
-            console.log('Order data to be sent:', orderData);
-            fetch('/upload', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(orderData)
-            })
-            .then(response => response.json())
-            .then(data => {
-                window.location.href = `/review?orderID=${data.orderID}`;
-            })
-            .catch(error => console.error('Error:', error));
-        }
+        loadingIndicator.style.display = 'block';
+        const orderData = {
+            images: imagesData
+        };
+        console.log('Order data to be sent:', orderData);
+        fetch('/upload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(orderData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            loadingIndicator.style.display = 'none';
+            window.location.href = `/review?orderID=${data.orderID}`;
+        })
+        .catch(error => {
+            loadingIndicator.style.display = 'none';
+            console.error('Error:', error);
+        });
     }
 
     function updateThumbnail(index, src) {
@@ -136,13 +150,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function checkMaxImages() {
         console.log('Checking max images:', { currentImageIndex, maxImages });
-        if (bundle === 'lightbox' && currentImageIndex >= maxImages - 1) {
+        if (bundle === 'lightbox' && currentImageIndex >= maxImages) {
             processAndUploadNextButton.style.display = 'none';
             processAndCheckoutButton.style.display = 'block';
+            processAndCheckoutButton.disabled = false;
             console.log('Lightbox bundle: Showing "Process and Proceed to Checkout" button.');
-        } else if (bundle === 'individual' && currentImageIndex >= maxImages - 1) {
+        } else if (bundle === 'individual' && currentImageIndex >= maxImages) {
             processAndUploadNextButton.style.display = 'block';
             processAndCheckoutButton.style.display = 'block';
+            processAndCheckoutButton.disabled = false;
             console.log('Individual bundle: Showing both buttons.');
         } else {
             processAndUploadNextButton.style.display = 'block';
@@ -151,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    processAndCheckoutButton.disabled = true;
     checkMaxImages();
 });
 

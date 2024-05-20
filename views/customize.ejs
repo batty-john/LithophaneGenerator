@@ -9,6 +9,9 @@
 </head>
 <body>
     <div class="container">
+        <header>
+            <h1>Customize Your Lithophane</h1>
+        </header>
         <div class="thumbnail-section">
             <% if (bundle === 'lightbox') { %>
                 <div class="thumbnail" id="thumb1"></div>
@@ -50,8 +53,8 @@
         </div>
 
         <div class="button-section">
-            <button id="processAndUploadNext">Process and Upload Next</button>
-            <button id="processAndCheckout" style="display: none;">Process and Proceed to Checkout</button>
+            <button class="btn" id="processAndUploadNext">Process and Add to Order</button>
+            <button class="btn" id="processAndCheckout" style="display: none;">Proceed to Checkout</button>
         </div>
     </div>
 
@@ -62,4 +65,5 @@
     <script src="/scripts/customize.js"></script>
 </body>
 </html>
+
 
