@@ -42,16 +42,19 @@ const db = createDbConnection();
 
 const app = express();
 
-const server = require('http').createServer(app);
-const wss = new WebSocket.Server({ server });
+const { Server } = require('ws');
+
+const wss = new Server({ server });
 
 // Store connected clients
 let connectedClients = [];
 
 wss.on('connection', (ws) => {
+    console.log('Client connected');
     connectedClients.push(ws);
 
     ws.on('close', () => {
+        console.log('Client disconnected');
         connectedClients = connectedClients.filter(client => client !== ws);
     });
 });
