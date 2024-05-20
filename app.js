@@ -218,28 +218,37 @@ app.post('/upload', async (req, res) => {
     try {
         const orderId = await createOrder(db, DEFAULT_CUSTOMER_ID);
         console.log(`Order created with ID: ${orderId}`);
-        const items = [];
-        let itemDetails = [];
-        
-        orderData.images.forEach(image => {
-            if (image.aspectRatio === '4x4') {
-                itemDetails.push(image);
-                if (itemDetails.length === 2) {
-                    items.push(itemDetails);
-                    itemDetails = [];
-                }
-            } else {
-                items.push([image]);
-            }
-        });
 
-        if (itemDetails.length > 0) {
-            items.push(itemDetails);
+        let items = [];
+
+        // Check if it's a lightbox bundle
+        if (orderData.bundle === 'lightbox') {
+            items.push(orderData.images);
+        } else {
+            // Handle individual pictures
+            let itemDetails = [];
+            orderData.images.forEach(image => {
+                if (image.aspectRatio === '4x4') {
+                    itemDetails.push(image);
+                    if (itemDetails.length === 2) {
+                        items.push(itemDetails);
+                        itemDetails = [];
+                    }
+                } else {
+                    items.push([image]);
+                }
+            });
+
+            if (itemDetails.length > 0) {
+                items.push(itemDetails);
+            }
         }
 
         const promises = items.map(async (itemGroup, index) => {
             let itemId;
-            if (itemGroup.length === 2) {
+            if (orderData.bundle === 'lightbox') {
+                itemId = 5; // Lightbox Bundle ID, replace with actual ID if needed
+            } else if (itemGroup.length === 2) {
                 itemId = 7; // Double 4x4
             } else if (itemGroup[0].aspectRatio === '4x4') {
                 itemId = 6; // Single 4x4
@@ -277,6 +286,7 @@ app.post('/upload', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
 
 app.get('/review', async (req, res) => {
     const orderID = req.query.orderID;

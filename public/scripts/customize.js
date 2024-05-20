@@ -103,7 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function processAndProceedToCheckout() {
         loadingIndicator.style.display = 'block';
         const orderData = {
-            images: imagesData
+            images: imagesData,
+            bundle: bundle
         };
         console.log('Order data to be sent:', orderData);
         fetch('/upload', {
