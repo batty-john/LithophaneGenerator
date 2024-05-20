@@ -329,38 +329,49 @@ function calculateSubtotal(items) {
 app.post('/complete-order', async (req, res) => {
     const {
         orderID, firstName, lastName, email, phoneNumber,
-        addressLine1, addressLine2, city, state, zip, stripeToken, subtotal, shipping, tax, total
+        addressLine1, addressLine2, city, state, zip, stripeToken
     } = req.body;
 
     try {
-        const customerResult = await queryDB(db, 'SELECT * FROM customer WHERE email = ?', [email]);
-        let customerID;
-        if (customerResult.length > 0) {
-            customerID = customerResult[0].id;
-            await queryDB(db, 'UPDATE customer SET name = ?, phone = ?, address1 = ?, address2 = ?, city = ?, state = ?, zip = ? WHERE id = ?',
-                [`${firstName} ${lastName}`, phoneNumber, addressLine1, addressLine2, city, state, zip, customerID]);
-        } else {
-            const newCustomerResult = await queryDB(db, 'INSERT INTO customer (name, email, phone, address1, address2, city, state, zip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [`${firstName} ${lastName}`, email, phoneNumber, addressLine1, addressLine2, city, state, zip]);
-            customerID = newCustomerResult.insertId;
+        // Check if the customer already exists
+        let customer = await getCustomerByEmail(email);
+        if (!customer) {
+            // Create a new customer
+            const createCustomerQuery = `
+                INSERT INTO customer (name, email, phone, address1, address2, city, state, zip, stripe_customer_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            const results = await queryDB(db, createCustomerQuery, [firstName + ' ' + lastName, email, phoneNumber, addressLine1, addressLine2, city, state, zip, null]);
+            customer = { id: results.insertId, email, name: firstName + ' ' + lastName, phone: phoneNumber, address1: addressLine1, address2: addressLine2, city, state, zip };
         }
 
-        await queryDB(db, 'UPDATE customer_order SET customer_id = ?, order_total = ?, stripe_order_id = ?, order_status = ? WHERE id = ?',
-            [customerID, total, stripeToken, 'submitted_paid', orderID]);
+        // Assign the order to the customer
+        const updateOrderCustomerQuery = 'UPDATE customer_order SET customer_id = ? WHERE id = ?';
+        await queryDB(db, updateOrderCustomerQuery, [customer.id, orderID]);
 
+        // Fetch order details from the database to calculate the total amount
+        const orderDetails = await getOrderDetails(orderID);
+        const subtotal = calculateSubtotal(orderDetails.items);
+        const shipping = 10.00; // Example shipping cost
+        const tax = subtotal * 0.08; // Example tax rate of 8%
+        const total = subtotal + shipping + tax;
+
+        // Create the Stripe charge
         const charge = await stripe.charges.create({
             amount: Math.round(total * 100), // Amount in cents
             currency: 'usd',
             description: `Order #${orderID}`,
             source: stripeToken,
+            metadata: { orderID }
         });
 
         // Store the last 4 digits of the card
         const last4 = charge.payment_method_details.card.last4;
-        await queryDB(db, 'UPDATE customer_order SET card_last4 = ? WHERE id = ?', [last4, orderID]);
+        await queryDB(db, 'UPDATE customer_order SET order_total = ?, stripe_order_id = ?, card_last4 = ?, order_status = ? WHERE id = ?',
+            [total, charge.id, last4, 'submitted_paid', orderID]);
 
         // Notify the STL generation machine
-        await notifySTLGeneration(orderID);
+        notifySTLGeneration(orderID);
 
         res.json({ success: true, orderID: orderID });
     } catch (error) {
@@ -368,6 +379,7 @@ app.post('/complete-order', async (req, res) => {
         res.json({ success: false, error: 'Payment processing failed' });
     }
 });
+
 
 
 
@@ -464,43 +476,62 @@ function calculateTotalAmount(orderDetails) {
 
 // Function to fetch order details
 async function getOrderDetails(orderID) {
-    const query = 'SELECT * FROM customer_order WHERE id = ?';
+    const query = `
+        SELECT co.*, c.*, oi.id AS order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars
+        FROM customer_order co
+        LEFT JOIN customer c ON co.customer_id = c.id
+        LEFT JOIN order_item oi ON co.id = oi.order_id
+        LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
+        WHERE co.id = ?
+    `;
+
     const results = await queryDB(db, query, [orderID]);
+
     if (results.length === 0) {
         console.error(`Order not found for ID: ${orderID}`);
         return null;
     }
 
-    let order = results[0];
-    console.log('Fetched order:', order);
+    const order = {
+        id: results[0].id,
+        customer_id: results[0].customer_id,
+        order_date: results[0].order_date,
+        order_status: results[0].order_status,
+        order_total: results[0].order_total,
+        stripe_order_id: results[0].stripe_order_id,
+        customer: {
+            name: results[0].name,
+            email: results[0].email,
+            phone: results[0].phone,
+            address1: results[0].address1,
+            address2: results[0].address2,
+            city: results[0].city,
+            state: results[0].state,
+            zip: results[0].zip
+        },
+        items: {}
+    };
 
-    const itemsQuery = 'SELECT oi.id as order_item_id, oi.item_price, oii.image_filepath FROM order_item oi LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id WHERE oi.order_id = ?';
-    const itemsResults = await queryDB(db, itemsQuery, [orderID]);
-    console.log('Fetched items:', itemsResults);
-
-    const items = {};
-    itemsResults.forEach(result => {
-        if (!items[result.order_item_id]) {
-            items[result.order_item_id] = {
+    results.forEach(result => {
+        if (!order.items[result.order_item_id]) {
+            order.items[result.order_item_id] = {
                 itemPrice: result.item_price,
+                hasHangars: result.has_hangars,
                 images: []
             };
         }
-        items[result.order_item_id].images.push(result.image_filepath);
+        order.items[result.order_item_id].images.push(result.image_filepath);
     });
 
-    order = {
-        ...order,
-        items,
-        subtotal: calculateSubtotal(items),
-        shipping: 10.00, // Example shipping cost
-        tax: calculateSubtotal(items) * 0.08, // Example tax rate of 8%
-        total: calculateSubtotal(items) + 10.00 + calculateSubtotal(items) * 0.08
-    };
+    order.subtotal = calculateSubtotal(order.items);
+    order.shipping = 10.00; // Example shipping cost
+    order.tax = order.subtotal * 0.08; // Example tax rate of 8%
+    order.total = order.subtotal + order.shipping + order.tax;
 
     console.log('Order details:', order);
     return order;
 }
+
 
 
 
@@ -609,6 +640,99 @@ function calculateSubtotal(items) {
 
 
 
+// Fetch all orders with filter and search functionality
+app.get('/api/orders', async (req, res) => {
+    const { filter, search } = req.query;
+    let filterQuery = '';
+    let searchQuery = '';
+
+    if (filter) {
+        filterQuery = 'WHERE order_status = ?';
+    }
+
+    if (search) {
+        searchQuery = `AND (c.name LIKE ? OR co.id LIKE ?)`;
+    }
+
+    const query = `
+        SELECT co.id as orderID, c.name, co.order_date, co.order_status, co.order_total,
+               COUNT(oi.id) as pictureCount, 
+               CASE WHEN c.box_included THEN 'Y' ELSE 'N' END as boxIncluded
+        FROM customer_order co
+        LEFT JOIN customer c ON co.customer_id = c.id
+        LEFT JOIN order_item oi ON co.id = oi.order_id
+        ${filterQuery} ${searchQuery}
+        GROUP BY co.id, c.name, co.order_date, co.order_status, co.order_total, c.box_included
+        ORDER BY co.order_date DESC
+    `;
+
+    try {
+        const params = [];
+        if (filter) params.push(filter);
+        if (search) {
+            const searchPattern = `%${search}%`;
+            params.push(searchPattern, searchPattern);
+        }
+        const results = await queryDB(db, query, params);
+        res.json(results);
+    } catch (error) {
+        console.error('Error fetching orders:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Fetch order details by orderID
+app.get('/api/order/:orderID', async (req, res) => {
+    const { orderID } = req.params;
+
+    try {
+        const orderDetails = await getOrderDetails(orderID);
+        if (!orderDetails) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        res.json(orderDetails);
+    } catch (error) {
+        console.error('Error fetching order details:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Resend STL generation request
+app.post('/api/resend-stl', async (req, res) => {
+    const { orderID, itemID } = req.body;
+
+    try {
+        // Fetch order details for the specified item
+        const query = `
+            SELECT oi.id as order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars
+            FROM order_item oi
+            LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
+            WHERE oi.order_id = ? AND oi.id = ?
+        `;
+        const results = await queryDB(db, query, [orderID, itemID]);
+
+        if (results.length === 0) {
+            return res.status(404).json({ error: 'Item not found in order' });
+        }
+
+        const item = {
+            itemID: results[0].order_item_id,
+            itemPrice: results[0].item_price,
+            hasHangars: results[0].has_hangars,
+            images: results.map(result => result.image_filepath)
+        };
+
+        // Notify STL generation machine
+        connectedClients.forEach(client => {
+            client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: [item] }));
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error resending STL request:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 
 

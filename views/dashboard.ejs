@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/styles/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard</h1>
+        <div class="filters">
+            <button id="filter-incomplete">Incomplete</button>
+            <input type="text" id="search" placeholder="Search by name">
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Order Number</th>
+                    <th>Order Total</th>
+                    <th>Payment Status</th>
+                    <th>Picture Count</th>
+                    <th>Box Included?</th>
+                    <th>Order Status</th>
+                </tr>
+            </thead>
+            <tbody id="orders">
+                <!-- Orders will be loaded here -->
+            </tbody>
+        </table>
+        <div class="item-details">
+            <h2>Item Details</h2>
+            <div id="item-details"></div>
+        </div>
+    </div>
+    <script src="/scripts/dashboard.js"></script>
+</body>
+</html>
