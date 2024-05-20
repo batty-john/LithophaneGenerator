@@ -47,8 +47,8 @@ const db = createDbConnection();
 
 
 /***********************************************************
- *Websocket Setup 
- */
+ * WebSocket Setup 
+ ***********************************************************/
 
 // Store connected clients
 let connectedClients = [];
@@ -77,16 +77,29 @@ app.use('/processed-uploads', express.static('processed-uploads'));
 app.use('/finalized-uploads', express.static('finalized-uploads'));
 app.use(express.json({ limit: '50mb' })); // Set limit to handle large payloads
 
+// Basic Authentication Middleware
+const basicAuth = (req, res, next) => {
+    const auth = { login: process.env.DASHBOARD_USER, password: process.env.DASHBOARD_PASS }; // Replace with your username and password
+
+    // Parse login and password from headers
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+    // Verify login and password are set and correct
+    if (login && password && login === auth.login && password === auth.password) {
+        return next();
+    }
+
+    // Access denied...
+    res.set('WWW-Authenticate', 'Basic realm="401"');
+    res.status(401).send('Authentication required.');
+};
+
 /***********************************************************
- * 
- * 
  * Helper Functions
- * 
- * 
  ***********************************************************/
 
 const DEFAULT_CUSTOMER_ID = 1;
-
 
 // Function to notify STL generation machines
 function notifySTLGeneration(orderID) {
@@ -107,8 +120,6 @@ function createOrder(db, customerId = DEFAULT_CUSTOMER_ID) {
         });
     });
 }
-
-
 
 async function saveOrderItem(db, details) {
     try {
@@ -173,11 +184,7 @@ async function processImage(image, filename) {
 }
 
 /***********************************************************
- * 
- * 
  * Route Handlers
- * 
- * 
  ***********************************************************/
 
 app.get('/', (req, res) => {
@@ -323,9 +330,6 @@ function calculateSubtotal(items) {
     return Object.values(items).reduce((sum, item) => sum + item.itemPrice, 0);
 }
 
-
-
-
 app.post('/complete-order', async (req, res) => {
     const {
         orderID, firstName, lastName, email, phoneNumber,
@@ -380,10 +384,6 @@ app.post('/complete-order', async (req, res) => {
     }
 });
 
-
-
-
-
 app.post('/process-image', async (req, res) => {
     const { filename, brightness, contrast, orderItemId } = req.body;
 
@@ -406,54 +406,6 @@ app.post('/process-image', async (req, res) => {
 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-app.post('/complete-order', async (req, res) => {
-    const { orderID, firstName, lastName, email, phoneNumber, addressLine1, addressLine2, city, state, zip, stripeToken } = req.body;
-
-    try {
-        // Check if the customer already exists
-        let customer = await getCustomerByEmail(email);
-        if (!customer) {
-            // Create a new customer
-            const createCustomerQuery = `
-                INSERT INTO customer (name, email, phone, address1, address2, city, state, zip, stripe_customer_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            const results = await queryDB(db, createCustomerQuery, [firstName + ' ' + lastName, email, phoneNumber, addressLine1, addressLine2, city, state, zip, null]);
-            customer = { id: results.insertId, email, name: firstName + ' ' + lastName, phone: phoneNumber, address1: addressLine1, address2: addressLine2, city, state, zip };
-        }
-
-        // Assign the order to the customer
-        const updateOrderCustomerQuery = 'UPDATE customer_order SET customer_id = ? WHERE id = ?';
-        await queryDB(db, updateOrderCustomerQuery, [customer.id, orderID]);
-
-        // Fetch order details from the database to calculate the total amount
-        const orderDetails = await getOrderDetails(orderID);
-        const subtotal = calculateSubtotal(orderDetails);
-        const shipping = 10.00; // Example shipping cost
-        const tax = subtotal * 0.08; // Example tax rate of 8%
-        const total = subtotal + shipping + tax;
-
-        // Create the Stripe charge
-        const charge = await stripe.charges.create({
-            amount: total * 100, // Amount in cents
-            currency: 'usd',
-            description: `Order ${orderID}`,
-            source: stripeToken,
-            metadata: { orderID }
-        });
-
-        // Update the order status in the database
-        const updateOrderStatusQuery = 'UPDATE customer_order SET order_status = ?, stripe_order_id = ? WHERE id = ?';
-        await queryDB(db, updateOrderStatusQuery, ['submitted_paid', charge.id, orderID]);
-
-        // Respond with success
-        res.json({ success: true, orderID });
-    } catch (error) {
-        console.error('Error completing order:', error.message);
-        res.status(500).json({ success: false, error: 'Internal Server Error' });
-    }
-});
-
 async function getCustomerByEmail(email) {
     const query = 'SELECT * FROM customer WHERE email = ?';
     const results = await queryDB(db, query, [email]);
@@ -461,20 +413,15 @@ async function getCustomerByEmail(email) {
 }
 
 function calculateTotalAmount(orderDetails) {
-    // Implement this function to calculate the total amount based on the order details
-    // This is just a placeholder implementation
     let total = 0;
     for (const item of Object.values(orderDetails.items)) {
         total += item.itemPrice;
     }
-    // Add shipping, tax, etc.
     total += 10; // Example shipping cost
     total += total * 0.08; // Example tax rate of 8%
     return total;
 }
 
-
-// Function to fetch order details
 async function getOrderDetails(orderID) {
     const query = `
         SELECT co.*, c.*, oi.id AS order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars
@@ -532,13 +479,15 @@ async function getOrderDetails(orderID) {
     return order;
 }
 
-
-
-
-
-
-
-
+function calculateSubtotal(items) {
+    let subtotal = 0;
+    if (items && Object.values(items).length > 0) {
+        for (const item of Object.values(items)) {
+            subtotal += item.itemPrice;
+        }
+    }
+    return subtotal;
+}
 
 app.get('/order-confirmation', async (req, res) => {
     const orderID = req.query.orderID;
@@ -560,10 +509,6 @@ app.get('/order-confirmation', async (req, res) => {
     }
 });
 
-
-
-
-
 async function getCustomerDetails(customerID) {
     const query = 'SELECT * FROM customer WHERE id = ?';
     const results = await queryDB(db, query, [customerID]);
@@ -573,74 +518,30 @@ async function getCustomerDetails(customerID) {
     return results[0];
 }
 
-async function getOrderDetails(orderID) {
-    const query = `
-        SELECT co.*, c.*, oi.id AS order_item_id, oi.item_price, oii.image_filepath 
-        FROM customer_order co
-        LEFT JOIN customer c ON co.customer_id = c.id
-        LEFT JOIN order_item oi ON co.id = oi.order_id
-        LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
-        WHERE co.id = ?`;
-
-    const results = await queryDB(db, query, [orderID]);
-
-    if (results.length === 0) {
-        console.error(`Order not found for ID: ${orderID}`);
-        return null;
+app.get('/dashboard', basicAuth, async (req, res) => {
+    try {
+        const query = `
+            SELECT co.id as orderID, c.name, co.order_date, co.order_status, co.order_total,
+                   COUNT(oi.id) as pictureCount, 
+                   CASE WHEN co.box_included THEN 'Y' ELSE 'N' END as boxIncluded
+            FROM customer_order co
+            LEFT JOIN customer c ON co.customer_id = c.id
+            LEFT JOIN order_item oi ON co.id = oi.order_id
+            GROUP BY co.id, c.name, co.order_date, co.order_status, co.order_total, co.box_included
+            ORDER BY co.order_date DESC
+        `;
+        const results = await queryDB(db, query);
+        res.render('dashboard', { orders: results });
+    } catch (error) {
+        console.error('Error fetching orders:', error);
+        res.status(500).send('Server error');
     }
+});
 
-    const order = {
-        id: results[0].id,
-        customer_id: results[0].customer_id,
-        order_date: results[0].order_date,
-        order_status: results[0].order_status,
-        order_total: results[0].order_total,
-        stripe_order_id: results[0].stripe_order_id,
-        customer: {
-            name: results[0].name,
-            email: results[0].email,
-            phone: results[0].phone,
-            address1: results[0].address1,
-            address2: results[0].address2,
-            city: results[0].city,
-            state: results[0].state,
-            zip: results[0].zip
-        },
-        items: {}
-    };
+app.get('/login', (req, res) => {
+    res.render('login');
+});
 
-    results.forEach(result => {
-        if (!order.items[result.order_item_id]) {
-            order.items[result.order_item_id] = {
-                itemPrice: result.item_price,
-                images: []
-            };
-        }
-        order.items[result.order_item_id].images.push(result.image_filepath);
-    });
-
-    order.subtotal = calculateSubtotal(order.items);
-    order.shipping = 10.00; // Example shipping cost
-    order.tax = order.subtotal * 0.08; // Example tax rate of 8%
-    order.total = order.subtotal + order.shipping + order.tax;
-
-    console.log('Order details:', order);
-    return order;
-}
-
-function calculateSubtotal(items) {
-    let subtotal = 0;
-    if (items && Object.values(items).length > 0) {
-        for (const item of Object.values(items)) {
-            subtotal += item.itemPrice;
-        }
-    }
-    return subtotal;
-}
-
-
-
-// Fetch all orders with filter and search functionality
 app.get('/api/orders', async (req, res) => {
     const { filter, search } = req.query;
     let filterQuery = '';
@@ -657,12 +558,12 @@ app.get('/api/orders', async (req, res) => {
     const query = `
         SELECT co.id as orderID, c.name, co.order_date, co.order_status, co.order_total,
                COUNT(oi.id) as pictureCount, 
-               CASE WHEN c.box_included THEN 'Y' ELSE 'N' END as boxIncluded
+               CASE WHEN co.box_included THEN 'Y' ELSE 'N' END as boxIncluded
         FROM customer_order co
         LEFT JOIN customer c ON co.customer_id = c.id
         LEFT JOIN order_item oi ON co.id = oi.order_id
         ${filterQuery} ${searchQuery}
-        GROUP BY co.id, c.name, co.order_date, co.order_status, co.order_total, c.box_included
+        GROUP BY co.id, c.name, co.order_date, co.order_status, co.order_total, co.box_included
         ORDER BY co.order_date DESC
     `;
 
@@ -681,7 +582,6 @@ app.get('/api/orders', async (req, res) => {
     }
 });
 
-// Fetch order details by orderID
 app.get('/api/order/:orderID', async (req, res) => {
     const { orderID } = req.params;
 
@@ -697,12 +597,10 @@ app.get('/api/order/:orderID', async (req, res) => {
     }
 });
 
-// Resend STL generation request
 app.post('/api/resend-stl', async (req, res) => {
     const { orderID, itemID } = req.body;
 
     try {
-        // Fetch order details for the specified item
         const query = `
             SELECT oi.id as order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars
             FROM order_item oi
@@ -722,7 +620,6 @@ app.post('/api/resend-stl', async (req, res) => {
             images: results.map(result => result.image_filepath)
         };
 
-        // Notify STL generation machine
         connectedClients.forEach(client => {
             client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: [item] }));
         });
@@ -734,16 +631,6 @@ app.post('/api/resend-stl', async (req, res) => {
     }
 });
 
-
-
-
-
-
-// Server setup
-
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
-
-
