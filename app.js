@@ -55,11 +55,15 @@ let connectedClients = [];
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
+    connectedClients.push(ws); // Add the connected client to the list
+
     ws.on('message', (message) => {
         console.log(`Received: ${message}`);
     });
+
     ws.on('close', () => {
         console.log('Client disconnected');
+        connectedClients = connectedClients.filter(client => client !== ws); // Remove the client from the list
     });
 });
 
@@ -102,10 +106,13 @@ const basicAuth = (req, res, next) => {
 const DEFAULT_CUSTOMER_ID = 1;
 
 // Function to notify STL generation machines
-function notifySTLGeneration(orderID) {
+// Function to notify STL generation machines
+function notifySTLGeneration(orderID, items) {
     console.log('Notifying STL generation machine for order:', orderID);
+    console.log('connectedClients:', connectedClients);
     connectedClients.forEach(client => {
-        client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID }));
+        console.log('Sending message to client: ', client);
+        client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: items }));
     });
 }
 
@@ -693,7 +700,7 @@ app.post('/api/resend-stl', async (req, res) => {
             images: results.map(result => result.image_filepath)
         };
 
-        notifySTLGeneration(orderID)
+        notifySTLGeneration(orderID, [item]);
 
         res.json({ success: true });
     } catch (error) {
