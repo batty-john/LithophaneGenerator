@@ -103,6 +103,7 @@ const DEFAULT_CUSTOMER_ID = 1;
 
 // Function to notify STL generation machines
 function notifySTLGeneration(orderID) {
+    console.log('Notifying STL generation machine for order:', orderID);
     connectedClients.forEach(client => {
         client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID }));
     });
