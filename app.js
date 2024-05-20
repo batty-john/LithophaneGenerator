@@ -3,6 +3,7 @@ require('dotenv').config();
 const mysql = require('mysql');
 const path = require('path');
 const bodyParser = require('body-parser');
+const http = require('http');
 const fs = require('fs');
 const Jimp = require('jimp');
 const cors = require('cors');
@@ -618,10 +619,6 @@ function calculateSubtotal(items) {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-});
-
-server.listen(port, () => {
-    console.log(`Server is listening on port ${port}`);
 });
 
 
