@@ -1,21 +1,23 @@
 body {
     font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
+    background-color: #f9f9f9;
     margin: 0;
     padding: 0;
+    color: #333;
 }
 
 .container {
     width: 90%;
-    margin: 0 auto;
+    margin: 20px auto;
     padding: 20px;
     background-color: #fff;
+    border-radius: 8px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    border-radius: 5px;
 }
 
 h1 {
     text-align: center;
+    color: #b3541e;
     margin-bottom: 20px;
 }
 
@@ -29,26 +31,28 @@ h1 {
     padding: 10px 20px;
     margin-right: 10px;
     border: none;
-    background-color: #007bff;
+    background-color: #b3541e;
     color: #fff;
-    border-radius: 3px;
+    border-radius: 5px;
     cursor: pointer;
+    transition: background-color 0.3s ease;
 }
 
 .filters button:hover {
-    background-color: #0056b3;
+    background-color: #a3420c;
 }
 
 .filters input {
     padding: 10px;
     border: 1px solid #ddd;
-    border-radius: 3px;
+    border-radius: 5px;
     width: 200px;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
+    margin-bottom: 20px;
 }
 
 table th, table td {
@@ -59,13 +63,15 @@ table th, table td {
 
 table th {
     background-color: #f4f4f4;
+    color: #333;
 }
 
 .order-details {
     background-color: #f9f9f9;
-    padding: 10px;
+    padding: 20px;
     border: 1px solid #ddd;
-    margin-top: 10px;
+    margin-top: 20px;
+    border-radius: 5px;
 }
 
 .order-details .items {
@@ -81,6 +87,8 @@ table th {
     border: 1px solid #ddd;
     margin-bottom: 10px;
     text-align: center;
+    border-radius: 5px;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
 }
 
 .order-details .item img {
@@ -92,13 +100,18 @@ table th {
 
 .order-details .item p {
     margin: 5px 0;
+    color: #666;
 }
 
 .order-details .item a, .order-details .item button {
     display: block;
     margin: 5px 0;
     text-decoration: none;
-    color: #007bff;
+    color: #b3541e;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
 }
 
 .order-details .item a:hover, .order-details .item button:hover {
@@ -108,5 +121,7 @@ table th {
 .order-details label {
     display: block;
     margin: 10px 0;
+    color: #333;
 }
+
 
