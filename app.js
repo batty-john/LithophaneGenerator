@@ -77,8 +77,8 @@ app.set('view engine', 'ejs');
 // Middleware
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/processed-uploads', express.static('processed-uploads'));
-app.use('/finalized-uploads', express.static('finalized-uploads'));
+app.use('/processed-uploads', express.static(path.join(__dirname, 'processed-uploads')));
+app.use('/finalized-uploads', express.static(path.join(__dirname, 'finalized-uploads')));
 app.use(express.json({ limit: '50mb' })); // Set limit to handle large payloads
 
 // Basic Authentication Middleware
