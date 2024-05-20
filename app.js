@@ -7,6 +7,10 @@ const fs = require('fs');
 const Jimp = require('jimp');
 const cors = require('cors');
 const WebSocket = require('ws');
+const app = express();
+const PORT = process.env.PORT || 3000;
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 // Function to create a MySQL connection
 function createDbConnection() {
@@ -40,22 +44,21 @@ function createDbConnection() {
 
 const db = createDbConnection();
 
-const app = express();
 
-const { Server } = require('ws');
-
-const wss = new Server({ server });
+/***********************************************************
+ *Websocket Setup 
+ */
 
 // Store connected clients
 let connectedClients = [];
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
-    connectedClients.push(ws);
-
+    ws.on('message', (message) => {
+        console.log(`Received: ${message}`);
+    });
     ws.on('close', () => {
         console.log('Client disconnected');
-        connectedClients = connectedClients.filter(client => client !== ws);
     });
 });
 
@@ -612,11 +615,14 @@ function calculateSubtotal(items) {
 
 
 // Server setup
-const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
+server.listen(port, () => {
+    console.log(`Server is listening on port ${port}`);
+});
 
 
 
