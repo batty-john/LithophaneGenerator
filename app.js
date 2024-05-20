@@ -108,6 +108,19 @@ function notifySTLGeneration(orderID) {
     });
 }
 
+// Helper function to perform database queries with promises
+function queryDB(db, sql, params) {
+    return new Promise((resolve, reject) => {
+        db.query(sql, params, (error, results) => {
+            if (error) {
+                console.error(`Error executing query: ${sql} with params: ${params}`, error);
+                return reject(error);
+            }
+            resolve(results);
+        });
+    });
+}
+
 function createOrder(db, customerId = DEFAULT_CUSTOMER_ID) {
     return new Promise((resolve, reject) => {
         const sql = "INSERT INTO customer_order (customer_id, order_date, order_status) VALUES (?, NOW(), 'submitted_pending')";
@@ -152,17 +165,9 @@ async function saveOrderItemImage(db, details) {
     }
 }
 
-// Helper function to perform database queries with promises
-function queryDB(db, sql, params) {
-    return new Promise((resolve, reject) => {
-        db.query(sql, params, (error, results) => {
-            if (error) {
-                return reject(error);
-            }
-            resolve(results);
-        });
-    });
-}
+
+
+
 
 async function processImage(image, filename) {
     try {
@@ -456,18 +461,18 @@ async function getOrderDetails(orderID) {
             state: results[0].state,
             zip: results[0].zip
         },
-        items: {}
+        items: []
     };
 
     results.forEach(result => {
-        if (!order.items[result.order_item_id]) {
-            order.items[result.order_item_id] = {
-                itemPrice: result.item_price,
-                hasHangars: result.has_hangars,
-                images: []
-            };
+        if (result.order_item_id) {
+            order.items.push({
+                order_item_id: result.order_item_id,
+                item_price: result.item_price,
+                image_filepath: result.image_filepath,
+                hasHangars: result.hasHangars
+            });
         }
-        order.items[result.order_item_id].images.push(result.image_filepath);
     });
 
     order.subtotal = calculateSubtotal(order.items);
@@ -478,6 +483,8 @@ async function getOrderDetails(orderID) {
     console.log('Order details:', order);
     return order;
 }
+
+
 
 function calculateSubtotal(items) {
     let subtotal = 0;
@@ -530,13 +537,20 @@ app.get('/dashboard', basicAuth, async (req, res) => {
             GROUP BY co.id, c.name, co.order_date, co.order_status, co.order_total, co.box_included
             ORDER BY co.order_date DESC
         `;
+        
+        console.log("Executing SQL query for dashboard:", query);
+        
         const results = await queryDB(db, query);
+        
+        console.log("Dashboard query results:", results);
+        
         res.render('dashboard', { orders: results });
     } catch (error) {
         console.error('Error fetching orders:', error);
         res.status(500).send('Server error');
     }
 });
+
 
 app.get('/login', (req, res) => {
     res.render('login');
@@ -548,7 +562,7 @@ app.get('/api/orders', async (req, res) => {
     let searchQuery = '';
 
     if (filter) {
-        filterQuery = 'WHERE order_status = ?';
+        filterQuery = 'WHERE co.order_status = ?';
     }
 
     if (search) {
@@ -574,7 +588,10 @@ app.get('/api/orders', async (req, res) => {
             const searchPattern = `%${search}%`;
             params.push(searchPattern, searchPattern);
         }
+        console.log('Executing SQL query for orders:', query);
+        console.log('SQL query parameters:', params);
         const results = await queryDB(db, query, params);
+        console.log('Orders query results:', results);
         res.json(results);
     } catch (error) {
         console.error('Error fetching orders:', error);
@@ -582,20 +599,68 @@ app.get('/api/orders', async (req, res) => {
     }
 });
 
+
+
 app.get('/api/order/:orderID', async (req, res) => {
     const { orderID } = req.params;
 
     try {
         const orderDetails = await getOrderDetails(orderID);
         if (!orderDetails) {
+            console.log(`Order with ID ${orderID} not found`);
             return res.status(404).json({ error: 'Order not found' });
         }
+        console.log('Fetched order details:', orderDetails);
         res.json(orderDetails);
     } catch (error) {
         console.error('Error fetching order details:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+app.post('/api/update-order-status', async (req, res) => {
+    const { orderID, status } = req.body;
+
+    try {
+        const query = 'UPDATE customer_order SET order_status = ? WHERE id = ?';
+        await queryDB(db, query, [status, orderID]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating order status:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.post('/api/order-status', async (req, res) => {
+    const { orderID, status } = req.body;
+
+    try {
+        const updateOrderStatusQuery = 'UPDATE customer_order SET order_status = ? WHERE id = ?';
+        await queryDB(db, updateOrderStatusQuery, [status, orderID]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating order status:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.post('/api/order-item-status', async (req, res) => {
+    const { orderID, itemID, status, isChecked } = req.body;
+
+    try {
+        const updateOrderItemStatusQuery = 'UPDATE order_item SET item_status = ? WHERE order_id = ? AND id = ?';
+        const newStatus = isChecked ? status : 'pending'; // Assuming 'pending' is the default status
+        await queryDB(db, updateOrderItemStatusQuery, [newStatus, orderID, itemID]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating order item status:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+
+
+
 
 app.post('/api/resend-stl', async (req, res) => {
     const { orderID, itemID } = req.body;
