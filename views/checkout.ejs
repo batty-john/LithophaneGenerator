@@ -71,86 +71,81 @@
     <script src="https://js.stripe.com/v3/"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const stripe = Stripe('pk_test_51PBhQBBeUkuwTwfEgLtVHIvGTRPjDVLgGqDqvZ5qRy9vnknhnqVo9l6MCKMdYrzJPVoTTAokoNlygPLn5HwujNnF00hdIl6o37');
-            const elements = stripe.elements();
-            const card = elements.create('card');
-            card.mount('#card-element');
+    const stripe = Stripe('your_public_key_here');
+    const elements = stripe.elements();
+    const card = elements.create('card');
+    card.mount('#card-element');
 
-            card.on('change', ({error}) => {
-                const displayError = document.getElementById('card-errors');
-                if (error) {
-                    displayError.textContent = error.message;
-                } else {
-                    displayError.textContent = '';
-                }
-            });
+    card.on('change', ({error}) => {
+        const displayError = document.getElementById('card-errors');
+        if (error) {
+            displayError.textContent = error.message;
+        } else {
+            displayError.textContent = '';
+        }
+    });
 
-            const form = document.getElementById('checkout-form');
-            form.addEventListener('submit', async (event) => {
-                event.preventDefault();
+    const form = document.getElementById('checkout-form');
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
 
-                const loadingIndicator = document.getElementById('loading-indicator');
-                loadingIndicator.style.display = 'block';
+        const {token, error} = await stripe.createToken(card);
+        if (error) {
+            const errorElement = document.getElementById('card-errors');
+            errorElement.textContent = error.message;
+        } else {
+            stripeTokenHandler(token);
+        }
+    });
 
-                const {token, error} = await stripe.createToken(card);
-                if (error) {
-                    console.error('Error:', error);
-                    const errorElement = document.getElementById('card-errors');
-                    errorElement.textContent = error.message;
-                    loadingIndicator.style.display = 'none';
-                } else {
-                    console.log('Token:', token);
-                    stripeTokenHandler(token);
-                }
-            });
+    function stripeTokenHandler(token) {
+        console.log("In stripeTokenHandler")
+        console.log(token);
+        const form = document.getElementById('checkout-form');
+        const hiddenInput = document.createElement('input');
+        hiddenInput.setAttribute('type', 'hidden');
+        hiddenInput.setAttribute('name', 'stripeToken');
+        hiddenInput.setAttribute('value', token.id);
+        form.appendChild(hiddenInput);
 
-            function stripeTokenHandler(token) {
-                const form = document.getElementById('checkout-form');
-                const hiddenInput = document.createElement('input');
-                hiddenInput.setAttribute('type', 'hidden');
-                hiddenInput.setAttribute('name', 'stripeToken');
-                hiddenInput.setAttribute('value', token.id);
-                form.appendChild(hiddenInput);
-
-                fetch('/complete-order', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        orderID: document.getElementById('orderID').value,
-                        firstName: document.getElementById('firstName').value,
-                        lastName: document.getElementById('lastName').value,
-                        email: document.getElementById('email').value,
-                        phoneNumber: document.getElementById('phoneNumber').value,
-                        addressLine1: document.getElementById('addressLine1').value,
-                        addressLine2: document.getElementById('addressLine2').value,
-                        city: document.getElementById('city').value,
-                        state: document.getElementById('state').value,
-                        zip: document.getElementById('zip').value,
-                        stripeToken: token.id,
-                        subtotal: parseFloat(document.getElementById('subtotal').textContent),
-                        shipping: parseFloat(document.getElementById('shipping').textContent),
-                        tax: parseFloat(document.getElementById('tax').textContent),
-                        total: parseFloat(document.getElementById('total').textContent)
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        window.location.href = `/order-confirmation?orderID=${data.orderID}`;
-                    } else {
-                        const errorElement = document.getElementById('card-errors');
-                        errorElement.textContent = data.error;
-                        loadingIndicator.style.display = 'none';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    loadingIndicator.style.display = 'none';
-                });
+        fetch('/complete-order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                orderID: document.getElementById('orderID').value,
+                firstName: document.getElementById('firstName').value,
+                lastName: document.getElementById('lastName').value,
+                email: document.getElementById('email').value,
+                phoneNumber: document.getElementById('phoneNumber').value,
+                addressLine1: document.getElementById('addressLine1').value,
+                addressLine2: document.getElementById('addressLine2').value,
+                city: document.getElementById('city').value,
+                state: document.getElementById('state').value,
+                zip: document.getElementById('zip').value,
+                stripeToken: token.id,
+                subtotal: parseFloat(document.getElementById('subtotal').textContent),
+                shipping: parseFloat(document.getElementById('shipping').textContent),
+                tax: parseFloat(document.getElementById('tax').textContent),
+                total: parseFloat(document.getElementById('total').textContent)
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = `/order-confirmation?orderID=${data.orderID}`;
+            } else {
+                const errorElement = document.getElementById('card-errors');
+                errorElement.textContent = data.error;
             }
+        })
+        .catch(error => {
+            console.error('Error:', error);
         });
+    }
+});
+
     </script>
 </body>
 </html>

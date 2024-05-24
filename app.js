@@ -392,6 +392,7 @@ function calculateSubtotal(items) {
 
 
 app.post('/complete-order', async (req, res) => {
+    console.log('Completing order:', req.body);
     const {
         orderID, firstName, lastName, email, phoneNumber,
         addressLine1, addressLine2, city, state, zip, stripeToken
