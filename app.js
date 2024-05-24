@@ -429,7 +429,7 @@ app.post('/complete-order', async (req, res) => {
             [total, charge.id, last4, 'submitted_paid', orderID]);
 
         // Notify the STL generation machine
-        notifySTLGeneration(orderID);
+        notifySTLGeneration(orderID, orderDetails.items); // Pass both orderID and items
 
         res.json({ success: true, orderID: orderID });
     } catch (error) {
@@ -437,6 +437,7 @@ app.post('/complete-order', async (req, res) => {
         res.json({ success: false, error: 'Payment processing failed' });
     }
 });
+
 
 app.post('/process-image', async (req, res) => {
     const { filename, brightness, contrast, orderItemId } = req.body;
