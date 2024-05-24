@@ -105,16 +105,23 @@ const basicAuth = (req, res, next) => {
 
 const DEFAULT_CUSTOMER_ID = 1;
 
-// Function to notify STL generation machines
-// Function to notify STL generation machines
 function notifySTLGeneration(orderID, items) {
     console.log('Notifying STL generation machine for order:', orderID);
     console.log('connectedClients:', connectedClients);
     connectedClients.forEach(client => {
         console.log('Sending message to client: ', client);
-        client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: items }));
+        const formattedItems = items.map(item => ({
+            itemID: item.itemID,
+            itemPrice: item.itemPrice,
+            photoSize: item.photoSize,
+            hanger: item.hanger,
+            images: item.images.map(img => img.imageFile),
+            printed: item.printed
+        }));
+        client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: formattedItems }));
     });
 }
+
 
 // Helper function to perform database queries with promises
 function queryDB(db, sql, params) {
