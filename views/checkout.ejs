@@ -94,6 +94,7 @@
 
                 const {token, error} = await stripe.createToken(card);
                 if (error) {
+                    console.error('Error:', error);
                     const errorElement = document.getElementById('card-errors');
                     errorElement.textContent = error.message;
                     loadingIndicator.style.display = 'none';
