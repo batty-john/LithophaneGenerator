@@ -71,7 +71,7 @@
     <script src="https://js.stripe.com/v3/"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-    const stripe = Stripe('your_public_key_here');
+    const stripe = Stripe('pk_test_51PBhQBBeUkuwTwfEgLtVHIvGTRPjDVLgGqDqvZ5qRy9vnknhnqVo9l6MCKMdYrzJPVoTTAokoNlygPLn5HwujNnF00hdIl6o37');
     const elements = stripe.elements();
     const card = elements.create('card');
     card.mount('#card-element');
