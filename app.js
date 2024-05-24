@@ -110,17 +110,22 @@ function notifySTLGeneration(orderID, items) {
     console.log('connectedClients:', connectedClients);
     connectedClients.forEach(client => {
         console.log('Sending message to client: ', client);
-        const formattedItems = items.map(item => ({
-            itemID: item.itemID,
-            itemPrice: item.itemPrice,
-            photoSize: item.photoSize,
-            hanger: item.hanger,
-            images: item.images.map(img => img.imageFile),
-            printed: item.printed
-        }));
-        client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: formattedItems }));
+        if (Array.isArray(items)) {
+            const formattedItems = items.map(item => ({
+                itemID: item.itemID,
+                itemPrice: item.itemPrice,
+                photoSize: item.photoSize,
+                hanger: item.hanger,
+                images: item.images.map(img => img.imageFile),
+                printed: item.printed
+            }));
+            client.send(JSON.stringify({ event: 'generateSTL', orderID: orderID, items: formattedItems }));
+        } else {
+            console.error('Items is not an array:', items);
+        }
     });
 }
+
 
 
 // Helper function to perform database queries with promises
@@ -479,6 +484,38 @@ function calculateTotalAmount(orderDetails) {
     total += total * 0.08; // Example tax rate of 8%
     return total;
 }
+
+async function getOrderItems(orderID) {
+    const query = `
+        SELECT oi.id as itemID, oi.item_price as itemPrice, oi.has_hangars as hanger,
+               oii.image_filepath as imageFile, oi.printed
+        FROM order_item oi
+        LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
+        WHERE oi.order_id = ?
+    `;
+    const results = await queryDB(db, query, [orderID]);
+
+    // Group images by order item
+    const items = results.reduce((acc, row) => {
+        const existingItem = acc.find(item => item.itemID === row.itemID);
+        if (existingItem) {
+            existingItem.images.push({ imageFile: row.imageFile });
+        } else {
+            acc.push({
+                itemID: row.itemID,
+                itemPrice: row.itemPrice,
+                photoSize: row.photoSize, // Assuming you have photoSize in your database
+                hanger: row.hanger,
+                images: [{ imageFile: row.imageFile }],
+                printed: row.printed
+            });
+        }
+        return acc;
+    }, []);
+    
+    return items;
+}
+
 
 async function getOrderDetails(orderID) {
     const query = `
