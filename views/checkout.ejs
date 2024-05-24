@@ -99,6 +99,7 @@
                     errorElement.textContent = error.message;
                     loadingIndicator.style.display = 'none';
                 } else {
+                    console.log('Token:', token);
                     stripeTokenHandler(token);
                 }
             });
