@@ -219,7 +219,7 @@ app.post('/upload', async (req, res) => {
         const orderId = await createOrder(db, DEFAULT_CUSTOMER_ID);
         console.log(`Order created with ID: ${orderId}`);
 
-        let items = [];
+        const items = [];
 
         // Check if it's a lightbox bundle
         if (orderData.bundle === 'lightbox') {
@@ -244,7 +244,7 @@ app.post('/upload', async (req, res) => {
             }
         }
 
-        const promises = items.map(async (itemGroup, index) => {
+        const promises = items.map(async (itemGroup) => {
             let itemId;
             if (orderData.bundle === 'lightbox') {
                 itemId = 5; // Lightbox Bundle ID, replace with actual ID if needed
@@ -268,7 +268,7 @@ app.post('/upload', async (req, res) => {
 
             console.log(`Order item created with ID: ${orderItemId}`);
 
-            return Promise.all(itemGroup.map(async (image, imgIndex) => {
+            await Promise.all(itemGroup.map(async (image, imgIndex) => {
                 const filename = `order_${orderId}_item_${orderItemId}_image_${imgIndex + 1}.png`;
                 const filepath = await processImage(image.src, filename);
 
@@ -280,12 +280,32 @@ app.post('/upload', async (req, res) => {
         });
 
         await Promise.all(promises);
-        res.json({ orderID: orderId });
+
+        // Fetch all items for the order
+        const itemsQuery = `SELECT * FROM order_item WHERE order_id = ?`;
+        const itemsResult = await queryDB(db, itemsQuery, [orderId]);
+        const fetchedItems = itemsResult.map(item => ({
+            itemID: item.id,
+            itemPrice: item.price, // Ensure the price is correctly fetched from the database
+            photoSize: item.photo_size,
+            hanger: item.has_hangars,
+            imageFile: item.image_filepath,
+            printed: item.printed
+        }));
+
+        // Calculate the subtotal after saving all items
+        const subtotal = calculateSubtotal(fetchedItems);
+        console.log(`Order ${orderId} subtotal: ${subtotal}`);
+
+        res.json({ orderID: orderId, subtotal });
     } catch (error) {
         console.error('Error processing order:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+
+
 
 
 app.get('/review', async (req, res) => {
@@ -353,8 +373,16 @@ app.get('/checkout', async (req, res) => {
 
 
 function calculateSubtotal(items) {
-    return Object.values(items).reduce((sum, item) => sum + item.itemPrice, 0);
+    const uniqueItems = items.reduce((acc, item) => {
+        if (!acc[item.itemID]) {
+            acc[item.itemID] = item;
+        }
+        return acc;
+    }, {});
+    return Object.values(uniqueItems).reduce((sum, item) => sum + item.itemPrice, 0);
 }
+
+
 
 app.post('/complete-order', async (req, res) => {
     const {
@@ -507,20 +535,6 @@ async function getOrderDetails(orderID) {
 }
 
 
-
-
-
-
-function calculateSubtotal(items) {
-    let subtotal = 0;
-    if (items && Object.values(items).length > 0) {
-        for (const item of Object.values(items)) {
-            subtotal += item.itemPrice;
-        }
-    }
-    return subtotal;
-}
-
 app.get('/order-confirmation', async (req, res) => {
     const orderID = req.query.orderID;
     try {
@@ -596,11 +610,9 @@ app.get('/api/orders', async (req, res) => {
 
     const query = `
         SELECT co.id as orderID, c.name, co.order_date, co.order_status, co.order_total,
-               COUNT(oi.id) as pictureCount, 
                CASE WHEN co.box_included THEN 'Y' ELSE 'N' END as boxIncluded
         FROM customer_order co
         LEFT JOIN customer c ON co.customer_id = c.id
-        LEFT JOIN order_item oi ON co.id = oi.order_id
         ${filterQuery} ${searchQuery}
         GROUP BY co.id, c.name, co.order_date, co.order_status, co.order_total, co.box_included
         ORDER BY co.order_date DESC
@@ -616,13 +628,39 @@ app.get('/api/orders', async (req, res) => {
         console.log('Executing SQL query for orders:', query);
         console.log('SQL query parameters:', params);
         const results = await queryDB(db, query, params);
-        console.log('Orders query results:', results);
-        res.json(results);
+
+        // Process results to calculate pictureCount and box inclusion
+        const processedResults = await Promise.all(results.map(async order => {
+            const itemsQuery = 'SELECT * FROM order_item WHERE order_id = ?';
+            const items = await queryDB(db, itemsQuery, [order.orderID]);
+            let pictureCount = 0;
+
+            items.forEach(item => {
+                if (item.item_id === 5) {
+                    pictureCount += 5; // Lightbox
+                } else if (item.item_id === 7) {
+                    pictureCount += 2; // Double 4x4
+                } else {
+                    pictureCount += 1;
+                }
+            });
+
+            return {
+                ...order,
+                pictureCount,
+                boxIncluded: items.some(item => item.item_id === 5) ? 'Y' : order.boxIncluded
+            };
+        }));
+
+        console.log('Orders query results:', processedResults);
+        res.json(processedResults);
     } catch (error) {
         console.error('Error fetching orders:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+
 
 
 
