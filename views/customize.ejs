@@ -29,7 +29,7 @@
             <div id="cropper-container"></div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" <% if (bundle === 'lightbox') { %>style="display:none;"<% } %>
             <label for="aspectRatioSelect">Aspect Ratio:</label>
             <select id="aspectRatioSelect">
                 <% if (bundle === 'lightbox') { %>
