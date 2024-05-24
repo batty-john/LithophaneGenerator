@@ -392,57 +392,52 @@ function calculateSubtotal(items) {
 
 
 app.post('/complete-order', async (req, res) => {
-    console.log('Completing order:', req.body);
     const {
         orderID, firstName, lastName, email, phoneNumber,
-        addressLine1, addressLine2, city, state, zip, stripeToken
+        addressLine1, addressLine2, city, state, zip,
+        stripeToken, subtotal, shipping, tax, total
     } = req.body;
 
     try {
-        // Check if the customer already exists
-        let customer = await getCustomerByEmail(email);
-        if (!customer) {
-            // Create a new customer
-            const createCustomerQuery = `
-                INSERT INTO customer (name, email, phone, address1, address2, city, state, zip, stripe_customer_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            const results = await queryDB(db, createCustomerQuery, [firstName + ' ' + lastName, email, phoneNumber, addressLine1, addressLine2, city, state, zip, null]);
-            customer = { id: results.insertId, email, name: firstName + ' ' + lastName, phone: phoneNumber, address1: addressLine1, address2: addressLine2, city, state, zip };
-        }
-
-        // Assign the order to the customer
-        const updateOrderCustomerQuery = 'UPDATE customer_order SET customer_id = ? WHERE id = ?';
-        await queryDB(db, updateOrderCustomerQuery, [customer.id, orderID]);
-
-        // Fetch order details from the database to calculate the total amount
-        const orderDetails = await getOrderDetails(orderID);
-        const subtotal = calculateSubtotal(orderDetails.items);
-        const shipping = 10.00; // Example shipping cost
-        const tax = subtotal * 0.08; // Example tax rate of 8%
-        const total = subtotal + shipping + tax;
-
         // Create the Stripe charge
         const charge = await stripe.charges.create({
-            amount: Math.round(total * 100), // Amount in cents
+            amount: Math.round(total * 100), // Convert to cents
             currency: 'usd',
-            description: `Order #${orderID}`,
             source: stripeToken,
-            metadata: { orderID }
+            description: `Order #${orderID}`,
+            metadata: { orderID: orderID },
+            receipt_email: email,
+            shipping: {
+                name: `${firstName} ${lastName}`,
+                address: {
+                    line1: addressLine1,
+                    line2: addressLine2,
+                    city: city,
+                    state: state,
+                    postal_code: zip,
+                    country: 'US',
+                },
+                phone: phoneNumber,
+            },
         });
 
-        // Store the last 4 digits of the card
-        const last4 = charge.payment_method_details.card.last4;
-        await queryDB(db, 'UPDATE customer_order SET order_total = ?, stripe_order_id = ?, card_last4 = ?, order_status = ? WHERE id = ?',
-            [total, charge.id, last4, 'submitted_paid', orderID]);
+        if (charge.status === 'succeeded') {
+            // Fetch order items to pass to notifySTLGeneration
+            const items = await getOrderItems(orderID);
 
-        // Notify the STL generation machine
-        notifySTLGeneration(orderID, orderDetails.items); // Pass both orderID and items
+            // Update order status to paid in the database
+            await updateOrderStatus(orderID, 'submitted_paid');
 
-        res.json({ success: true, orderID: orderID });
+            // Notify STL generation machines
+            notifySTLGeneration(orderID, items);
+
+            res.json({ success: true, orderID: orderID });
+        } else {
+            res.status(500).json({ error: 'Payment failed' });
+        }
     } catch (error) {
-        console.error('Error completing order:', error);
-        res.json({ success: false, error: 'Payment processing failed' });
+        console.error('Error processing payment:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
