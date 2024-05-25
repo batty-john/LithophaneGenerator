@@ -142,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p>Hanger: ${item.hanger ? 'Yes' : 'No'}</p>
                         <p>Image File: ${item.imageFile}</p>
                         <p>Printed: ${item.printed ? 'Yes' : 'No'}</p>
+                        <button class="resend-stl" data-order-id="${order.id}" data-item-id="${item.itemID}">Resend STL</button>
                     </div>
                 `).join('')}
             </div>
@@ -157,6 +158,37 @@ document.addEventListener('DOMContentLoaded', () => {
         detailsCell.querySelectorAll('.status-dropdown').forEach(dropdown => {
             dropdown.addEventListener('change', updateOrderStatus);
         });
+
+        detailsCell.querySelectorAll('.resend-stl').forEach(button => {
+            button.addEventListener('click', resendSTL);
+        });
+    }
+
+    function resendSTL(event) {
+        const button = event.target;
+        const orderID = button.getAttribute('data-order-id');
+        const itemID = button.getAttribute('data-item-id');
+
+        console.log('Resending STL for order ID:', orderID, 'item ID:', itemID);
+
+        fetch('/api/resend-stl', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ orderID, itemID })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('STL resend successfully');
+                    alert('STL resend successfully');
+                } else {
+                    console.log('Error resending STL');
+                    alert('Error resending STL');
+                }
+            })
+            .catch(error => console.error('Error resending STL:', error));
     }
 
     function updateOrderStatus(event) {
@@ -210,6 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     attachEventListeners();
 });
+
 
 
 
