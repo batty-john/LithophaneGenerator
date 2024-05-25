@@ -327,7 +327,6 @@ app.get('/checkout', async (req, res) => {
 
     try {
         const orderDetails = await getOrderDetails(orderID);
-        console.log('Order details:', orderDetails);
         if (!orderDetails) {
             res.status(404).send('Order not found');
             return;
@@ -547,7 +546,6 @@ async function getOrderDetails(orderID) {
     order.tax = order.subtotal * 0.075; // Example tax rate of 8%
     order.total = order.subtotal + order.shipping + order.tax;
 
-    console.log('Order details:', order);
     return order;
 }
 
@@ -593,11 +591,9 @@ app.get('/dashboard', basicAuth, async (req, res) => {
             ORDER BY co.order_date DESC
         `;
         
-        console.log("Executing SQL query for dashboard:", query);
         
         const results = await queryDB(query);
         
-        console.log("Dashboard query results:", results);
         
         res.render('dashboard', { orders: results });
     } catch (error) {
@@ -640,8 +636,6 @@ app.get('/api/orders', async (req, res) => {
             const searchPattern = `%${search}%`;
             params.push(searchPattern, searchPattern);
         }
-        console.log('Executing SQL query for orders:', query);
-        console.log('SQL query parameters:', params);
         const results = await queryDB(query, params);
 
         // Process results to calculate pictureCount and box inclusion
@@ -667,7 +661,6 @@ app.get('/api/orders', async (req, res) => {
             };
         }));
 
-        console.log('Orders query results:', processedResults);
         res.json(processedResults);
     } catch (error) {
         console.error('Error fetching orders:', error);
@@ -684,7 +677,6 @@ app.get('/api/order/:orderID', async (req, res) => {
             console.log(`Order with ID ${orderID} not found`);
             return res.status(404).json({ error: 'Order not found' });
         }
-        console.log('Fetched order details:', orderDetails);
         res.json(orderDetails);
     } catch (error) {
         console.error('Error fetching order details:', error);
