@@ -128,6 +128,7 @@ function notifySTLGeneration(orderID, items) {
 
 
 
+
 // Helper function to perform database queries with promises
 function queryDB(db, sql, params) {
     return new Promise((resolve, reject) => {
@@ -488,7 +489,7 @@ function calculateTotalAmount(orderDetails) {
 async function getOrderItems(orderID) {
     const query = `
         SELECT oi.id as itemID, oi.item_price as itemPrice, oi.has_hangars as hanger,
-               oii.image_filepath as imageFile, oi.printed
+               oii.image_filepath as imageFile
         FROM order_item oi
         LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
         WHERE oi.order_id = ?
@@ -507,7 +508,7 @@ async function getOrderItems(orderID) {
                 photoSize: row.photoSize, // Assuming you have photoSize in your database
                 hanger: row.hanger,
                 images: [{ imageFile: row.imageFile }],
-                printed: row.printed
+                printed: false // Default to false if printed status is not in the database
             });
         }
         return acc;
@@ -515,6 +516,7 @@ async function getOrderItems(orderID) {
     
     return items;
 }
+
 
 
 async function getOrderDetails(orderID) {
