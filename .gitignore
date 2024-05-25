@@ -2,3 +2,4 @@ uploads/
 processed-uploads/
 finalized-uploads/
 .env
+!finalized-uploads\order_134_item_129_image_1.png

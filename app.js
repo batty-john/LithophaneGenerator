@@ -386,7 +386,7 @@ app.post('/complete-order', async (req, res) => {
         // Fetch order details from the database to calculate the total amount
         const orderDetails = await getOrderDetails(orderID);
         const subtotal = calculateSubtotal(orderDetails.items);
-        const shipping = 10.00; // Example shipping cost
+        const shipping = 0.00; // Example shipping cost
         const tax = subtotal * 0.08; // Example tax rate of 8%
         const total = subtotal + shipping + tax;
 
@@ -762,7 +762,7 @@ app.post('/api/resend-stl', async (req, res) => {
 
     try {
         const query = `
-            SELECT oi.id as order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars
+            SELECT oi.id as order_item_id, oi.item_price, oii.image_filepath, oi.has_hangars, oi.item_id
             FROM order_item oi
             LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
             WHERE oi.order_id = ? AND oi.id = ?
@@ -776,9 +776,24 @@ app.post('/api/resend-stl', async (req, res) => {
         const item = {
             itemID: results[0].order_item_id,
             itemPrice: results[0].item_price,
-            hasHangars: results[0].has_hangars,
-            images: results.map(result => result.image_filepath)
+            hanger: results[0].has_hangars,
+            images: results.map(result => ({ imageFile: result.image_filepath })),
+            printed: false // Assuming the printed status is false for resend
         };
+
+        // Determine the aspect ratio based on the item_id
+        let aspectRatio;
+        if (results[0].item_id === 5 || results[0].item_id === 6 || results[0].item_id === 7) {
+            aspectRatio = '4x4';
+        } else if (results[0].item_id === 8) {
+            aspectRatio = '4x6';
+        } else if (results[0].item_id === 9) {
+            aspectRatio = '6x4';
+        } else {
+            throw new Error('Unsupported item_id for aspect ratio');
+        }
+
+        item.aspectRatio = aspectRatio;
 
         notifySTLGeneration(orderID, [item]);
 
@@ -788,6 +803,7 @@ app.post('/api/resend-stl', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
 
 async function sendEmailNotification(lead) {
     let transporter = nodemailer.createTransport({
