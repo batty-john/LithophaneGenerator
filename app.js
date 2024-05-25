@@ -92,7 +92,7 @@ function notifySTLGeneration(orderID, items) {
             const formattedItems = items.map(item => ({
                 itemID: item.itemID,
                 itemPrice: item.itemPrice,
-                photoSize: item.photoSize,
+                aspectRatio: item.aspectRatio, // Include the aspect ratio
                 hanger: item.hanger,
                 images: item.images.map(img => img.imageFile),
                 printed: item.printed
@@ -103,6 +103,7 @@ function notifySTLGeneration(orderID, items) {
         }
     });
 }
+
 
 // Helper function to perform database queries with promises using connection pool
 function queryDB(sql, params) {
@@ -461,12 +462,21 @@ async function getCustomerByEmail(email) {
 async function getOrderItems(orderID) {
     const query = `
         SELECT oi.id as itemID, oi.item_price as itemPrice, oi.has_hangars as hanger,
-               oii.image_filepath as imageFile
+               oii.image_filepath as imageFile, oi.item_id as itemTypeID
         FROM order_item oi
         LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
         WHERE oi.order_id = ?
     `;
     const results = await queryDB(query, [orderID]);
+
+    // Map item IDs to aspect ratios
+    const aspectRatioMap = {
+        5: '4x4',
+        6: '4x4',
+        7: '4x4',
+        8: '4x6',
+        9: '6x4'
+    };
 
     // Group images by order item
     const items = results.reduce((acc, row) => {
@@ -477,7 +487,7 @@ async function getOrderItems(orderID) {
             acc.push({
                 itemID: row.itemID,
                 itemPrice: row.itemPrice,
-                photoSize: row.photoSize, // Assuming you have photoSize in your database
+                aspectRatio: aspectRatioMap[row.itemTypeID] || 'unknown', // Fetch aspect ratio based on itemTypeID
                 hanger: row.hanger,
                 images: [{ imageFile: row.imageFile }],
                 printed: false // Default to false if printed status is not in the database
@@ -488,6 +498,7 @@ async function getOrderItems(orderID) {
 
     return items;
 }
+
 
 async function getOrderDetails(orderID) {
     const query = `
@@ -603,6 +614,30 @@ app.get('/dashboard', basicAuth, async (req, res) => {
 app.get('/login', (req, res) => {
     res.render('login');
 });
+
+app.get('/quote', (req, res) => {
+    res.render('quote');
+});
+
+app.post('/quote', async (req, res) => {
+    const { name, email, location, size, details } = req.body;
+
+    try {
+        // Save the lead to the database
+        const sql = `INSERT INTO leads (name, email, location, size, details) VALUES (?, ?, ?, ?, ?)`;
+        await queryDB(sql, [name, email, location, size, details]);
+
+        // Optionally, send an email notification about the new lead
+        // await sendEmailNotification({ name, email, location, size, details });
+
+        res.send('Thank you for your request! We will get back to you soon.');
+    } catch (error) {
+        console.error('Error saving quote request:', error);
+        res.status(500).send('An error occurred while processing your request.');
+    }
+});
+
+
 
 app.get('/api/orders', async (req, res) => {
     const { filter, search } = req.query;
@@ -753,6 +788,25 @@ app.post('/api/resend-stl', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+async function sendEmailNotification(lead) {
+    let transporter = nodemailer.createTransport({
+        service: 'Gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    let mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: process.env.NOTIFICATION_EMAIL,
+        subject: 'New Quote Request',
+        text: `You have a new quote request from ${lead.name} (${lead.email}).\n\nLocation: ${lead.location}\nSize: ${lead.size}\nDetails: ${lead.details}`
+    };
+
+    await transporter.sendMail(mailOptions);
+}
 
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
