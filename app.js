@@ -106,7 +106,7 @@ const basicAuth = (req, res, next) => {
 const DEFAULT_CUSTOMER_ID = 1;
 
 async function updateOrderStatus(orderID, status) {
-    const query = 'UPDATE orders SET order_status = ? WHERE id = ?';
+    const query = 'UPDATE customer_order SET order_status = ? WHERE id = ?';
     await queryDB(db, query, [status, orderID]);
 }
 
