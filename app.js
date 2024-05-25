@@ -372,8 +372,8 @@ app.get('/checkout', async (req, res) => {
 
         // Calculate subtotal, shipping, tax, and total
         const subtotal = calculateSubtotal(orderDetails.items);
-        const shipping = 10.00; // Assuming a flat rate for simplicity
-        const tax = subtotal * 0.08; // Assuming an 8% tax rate
+        const shipping = 0; // Assuming a flat rate for simplicity
+        const tax = subtotal * 0.075; // Assuming an 8% tax rate
         const total = subtotal + shipping + tax;
 
         res.render('checkout', {
