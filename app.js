@@ -87,9 +87,7 @@ async function updateOrderStatus(orderID, status) {
 
 function notifySTLGeneration(orderID, items) {
     console.log('Notifying STL generation machine for order:', orderID);
-    console.log('connectedClients:', connectedClients);
     connectedClients.forEach(client => {
-        console.log('Sending message to client: ', client);
         if (Array.isArray(items)) {
             const formattedItems = items.map(item => ({
                 itemID: item.itemID,
