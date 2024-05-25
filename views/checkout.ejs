@@ -71,7 +71,7 @@
     <script src="https://js.stripe.com/v3/"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-    const stripe = Stripe('pk_test_51PBhQBBeUkuwTwfEgLtVHIvGTRPjDVLgGqDqvZ5qRy9vnknhnqVo9l6MCKMdYrzJPVoTTAokoNlygPLn5HwujNnF00hdIl6o37');
+    const stripe = Stripe('pk_live_51PBhQBBeUkuwTwfEiBaesXv1L2TafkA1LDaK0qqucfMTeTSHGxIHne9IPcYwc8d886JPD187972VBWIBsAIVR2z100r3Mu1Csz');
     const elements = stripe.elements();
     const card = elements.create('card');
     card.mount('#card-element');
