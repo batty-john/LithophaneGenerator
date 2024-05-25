@@ -13,38 +13,14 @@ const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Function to create a MySQL connection
-function createDbConnection() {
-    const db = mysql.createConnection({
-        host: process.env.DB_HOST,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASS,
-        database: process.env.DB_NAME
-    });
-
-    db.connect(err => {
-        if (err) {
-            console.error('Error connecting to database:', err);
-            setTimeout(createDbConnection, 2000); // Try to reconnect after 2 seconds
-        } else {
-            console.log('Connected to database');
-        }
-    });
-
-    db.on('error', err => {
-        console.error('Database error:', err);
-        if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-            createDbConnection(); // Reconnect to the database
-        } else {
-            throw err;
-        }
-    });
-
-    return db;
-}
-
-const db = createDbConnection();
-
+// Function to create a MySQL connection pool
+const pool = mysql.createPool({
+    connectionLimit: 10, // Adjust this based on your needs
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME
+});
 
 /***********************************************************
  * WebSocket Setup 
@@ -66,7 +42,6 @@ wss.on('connection', (ws) => {
         connectedClients = connectedClients.filter(client => client !== ws); // Remove the client from the list
     });
 });
-
 
 app.use(cors());
 
@@ -107,9 +82,8 @@ const DEFAULT_CUSTOMER_ID = 1;
 
 async function updateOrderStatus(orderID, status) {
     const query = 'UPDATE customer_order SET order_status = ? WHERE id = ?';
-    await queryDB(db, query, [status, orderID]);
+    await queryDB(query, [status, orderID]);
 }
-
 
 function notifySTLGeneration(orderID, items) {
     console.log('Notifying STL generation machine for order:', orderID);
@@ -132,13 +106,10 @@ function notifySTLGeneration(orderID, items) {
     });
 }
 
-
-
-
-// Helper function to perform database queries with promises
-function queryDB(db, sql, params) {
+// Helper function to perform database queries with promises using connection pool
+function queryDB(sql, params) {
     return new Promise((resolve, reject) => {
-        db.query(sql, params, (error, results) => {
+        pool.query(sql, params, (error, results) => {
             if (error) {
                 console.error(`Error executing query: ${sql} with params: ${params}`, error);
                 return reject(error);
@@ -148,10 +119,10 @@ function queryDB(db, sql, params) {
     });
 }
 
-function createOrder(db, customerId = DEFAULT_CUSTOMER_ID) {
+function createOrder(customerId = DEFAULT_CUSTOMER_ID) {
     return new Promise((resolve, reject) => {
         const sql = "INSERT INTO customer_order (customer_id, order_date, order_status) VALUES (?, NOW(), 'submitted_pending')";
-        db.query(sql, [customerId], (error, results) => {
+        pool.query(sql, [customerId], (error, results) => {
             if (error) {
                 reject(error);
             } else {
@@ -161,18 +132,18 @@ function createOrder(db, customerId = DEFAULT_CUSTOMER_ID) {
     });
 }
 
-async function saveOrderItem(db, details) {
+async function saveOrderItem(details) {
     try {
         const priceQuery = 'SELECT item_price FROM item WHERE id = ?';
         console.log("Fetching item price for item: ", details);
-        const itemResult = await queryDB(db, priceQuery, [details.item_id]);
+        const itemResult = await queryDB(priceQuery, [details.item_id]);
         if (itemResult.length === 0) {
             throw new Error('Item not found');
         }
         const itemPrice = itemResult[0].item_price;
 
         const sql = `INSERT INTO order_item (order_id, item_id, item_status, has_hangars, item_price) VALUES (?, ?, 'pending', ?, ?)`;
-        const result = await queryDB(db, sql, [details.order_id, details.item_id, details.has_hangars, itemPrice]);
+        const result = await queryDB(sql, [details.order_id, details.item_id, details.has_hangars, itemPrice]);
         console.log(`Order item created: Order ID: ${details.order_id}, Item ID: ${details.item_id}, Price: ${itemPrice}`);
         return result.insertId;
     } catch (error) {
@@ -181,20 +152,16 @@ async function saveOrderItem(db, details) {
     }
 }
 
-async function saveOrderItemImage(db, details) {
+async function saveOrderItemImage(details) {
     try {
         const sql = `INSERT INTO order_item_image (order_item_id, image_filepath, image_status) VALUES (?, ?, 'pending')`;
-        await queryDB(db, sql, [details.order_item_id, details.filepath]);
+        await queryDB(sql, [details.order_item_id, details.filepath]);
         console.log("Order item image saved with filepath:", details.filepath);
     } catch (error) {
         console.error("Error saving order item image:", error);
         throw error; // Rethrow to handle it in the calling function
     }
 }
-
-
-
-
 
 async function processImage(image, filename) {
     try {
@@ -235,7 +202,7 @@ app.get('/customize', (req, res) => {
 app.post('/upload', async (req, res) => {
     const orderData = req.body;
     try {
-        const orderId = await createOrder(db, DEFAULT_CUSTOMER_ID);
+        const orderId = await createOrder(DEFAULT_CUSTOMER_ID);
         console.log(`Order created with ID: ${orderId}`);
 
         const items = [];
@@ -279,7 +246,7 @@ app.post('/upload', async (req, res) => {
                 throw new Error('Unsupported aspect ratio');
             }
 
-            const orderItemId = await saveOrderItem(db, {
+            const orderItemId = await saveOrderItem({
                 order_id: orderId,
                 item_id: itemId,
                 has_hangars: itemGroup.some(image => image.hangars === 'yes')
@@ -291,7 +258,7 @@ app.post('/upload', async (req, res) => {
                 const filename = `order_${orderId}_item_${orderItemId}_image_${imgIndex + 1}.png`;
                 const filepath = await processImage(image.src, filename);
 
-                await saveOrderItemImage(db, {
+                await saveOrderItemImage({
                     order_item_id: orderItemId,
                     filepath: filename
                 });
@@ -302,7 +269,7 @@ app.post('/upload', async (req, res) => {
 
         // Fetch all items for the order
         const itemsQuery = `SELECT * FROM order_item WHERE order_id = ?`;
-        const itemsResult = await queryDB(db, itemsQuery, [orderId]);
+        const itemsResult = await queryDB(itemsQuery, [orderId]);
         const fetchedItems = itemsResult.map(item => ({
             itemID: item.id,
             itemPrice: item.price, // Ensure the price is correctly fetched from the database
@@ -323,10 +290,6 @@ app.post('/upload', async (req, res) => {
     }
 });
 
-
-
-
-
 app.get('/review', async (req, res) => {
     const orderID = req.query.orderID;
 
@@ -338,7 +301,7 @@ app.get('/review', async (req, res) => {
             LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
             WHERE oi.order_id = ?
         `;
-        const orderItems = await queryDB(db, orderQuery, [orderID]);
+        const orderItems = await queryDB(orderQuery, [orderID]);
 
         const items = orderItems.reduce((acc, item) => {
             if (!acc[item.order_item_id]) {
@@ -389,8 +352,6 @@ app.get('/checkout', async (req, res) => {
     }
 });
 
-
-
 function calculateSubtotal(items) {
     const uniqueItems = items.reduce((acc, item) => {
         if (!acc[item.itemID]) {
@@ -401,23 +362,43 @@ function calculateSubtotal(items) {
     return Object.values(uniqueItems).reduce((sum, item) => sum + item.itemPrice, 0);
 }
 
-
-
 app.post('/complete-order', async (req, res) => {
     const {
         orderID, firstName, lastName, email, phoneNumber,
-        addressLine1, addressLine2, city, state, zip,
-        stripeToken, subtotal, shipping, tax, total
+        addressLine1, addressLine2, city, state, zip, stripeToken
     } = req.body;
 
     try {
+        // Check if the customer already exists
+        let customer = await getCustomerByEmail(email);
+        if (!customer) {
+            // Create a new customer
+            const createCustomerQuery = `
+                INSERT INTO customer (name, email, phone, address1, address2, city, state, zip, stripe_customer_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            const results = await queryDB(createCustomerQuery, [firstName + ' ' + lastName, email, phoneNumber, addressLine1, addressLine2, city, state, zip, null]);
+            customer = { id: results.insertId, email, name: firstName + ' ' + lastName, phone: phoneNumber, address1: addressLine1, address2: addressLine2, city, state, zip };
+        }
+
+        // Assign the order to the customer
+        const updateOrderCustomerQuery = 'UPDATE customer_order SET customer_id = ? WHERE id = ?';
+        await queryDB(updateOrderCustomerQuery, [customer.id, orderID]);
+
+        // Fetch order details from the database to calculate the total amount
+        const orderDetails = await getOrderDetails(orderID);
+        const subtotal = calculateSubtotal(orderDetails.items);
+        const shipping = 10.00; // Example shipping cost
+        const tax = subtotal * 0.08; // Example tax rate of 8%
+        const total = subtotal + shipping + tax;
+
         // Create the Stripe charge
         const charge = await stripe.charges.create({
-            amount: Math.round(total * 100), // Convert to cents
+            amount: Math.round(total * 100), // Amount in cents
             currency: 'usd',
-            source: stripeToken,
             description: `Order #${orderID}`,
-            metadata: { orderID: orderID },
+            source: stripeToken,
+            metadata: { orderID },
             receipt_email: email,
             shipping: {
                 name: `${firstName} ${lastName}`,
@@ -433,23 +414,21 @@ app.post('/complete-order', async (req, res) => {
             },
         });
 
-        if (charge.status === 'succeeded') {
-            // Fetch order items to pass to notifySTLGeneration
-            const items = await getOrderItems(orderID);
+        // Store the last 4 digits of the card
+        const last4 = charge.payment_method_details.card.last4;
+        await queryDB('UPDATE customer_order SET order_total = ?, stripe_order_id = ?, card_last4 = ?, order_status = ? WHERE id = ?',
+            [total, charge.id, last4, 'submitted_paid', orderID]);
 
-            // Update order status to paid in the database
-            await updateOrderStatus(orderID, 'submitted_paid');
+        // Fetch order items to pass to notifySTLGeneration
+        const items = await getOrderItems(orderID);
 
-            // Notify STL generation machines
-            notifySTLGeneration(orderID, items);
+        // Notify STL generation machines
+        notifySTLGeneration(orderID, items);
 
-            res.json({ success: true, orderID: orderID });
-        } else {
-            res.status(500).json({ error: 'Payment failed' });
-        }
+        res.json({ success: true, orderID: orderID });
     } catch (error) {
-        console.error('Error processing payment:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        console.error('Error completing order:', error);
+        res.json({ success: false, error: 'Payment processing failed' });
     }
 });
 
@@ -478,18 +457,8 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 async function getCustomerByEmail(email) {
     const query = 'SELECT * FROM customer WHERE email = ?';
-    const results = await queryDB(db, query, [email]);
+    const results = await queryDB(query, [email]);
     return results[0];
-}
-
-function calculateTotalAmount(orderDetails) {
-    let total = 0;
-    for (const item of Object.values(orderDetails.items)) {
-        total += item.itemPrice;
-    }
-    total += 10; // Example shipping cost
-    total += total * 0.08; // Example tax rate of 8%
-    return total;
 }
 
 async function getOrderItems(orderID) {
@@ -500,7 +469,7 @@ async function getOrderItems(orderID) {
         LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
         WHERE oi.order_id = ?
     `;
-    const results = await queryDB(db, query, [orderID]);
+    const results = await queryDB(query, [orderID]);
 
     // Group images by order item
     const items = results.reduce((acc, row) => {
@@ -519,11 +488,9 @@ async function getOrderItems(orderID) {
         }
         return acc;
     }, []);
-    
+
     return items;
 }
-
-
 
 async function getOrderDetails(orderID) {
     const query = `
@@ -536,7 +503,7 @@ async function getOrderDetails(orderID) {
         WHERE co.id = ?
     `;
 
-    const results = await queryDB(db, query, [orderID]);
+    const results = await queryDB(query, [orderID]);
 
     if (results.length === 0) {
         console.error(`Order not found for ID: ${orderID}`);
@@ -550,6 +517,7 @@ async function getOrderDetails(orderID) {
         order_status: results[0].order_status,
         order_total: results[0].order_total,
         stripe_order_id: results[0].stripe_order_id,
+        card_last4: results[0].card_last4,
         customer: {
             name: results[0].customer_name,
             email: results[0].email,
@@ -575,14 +543,13 @@ async function getOrderDetails(orderID) {
     });
 
     order.subtotal = calculateSubtotal(order.items);
-    order.shipping = 10.00; // Example shipping cost
-    order.tax = order.subtotal * 0.08; // Example tax rate of 8%
+    order.shipping = 0; // Example shipping cost
+    order.tax = order.subtotal * 0.075; // Example tax rate of 8%
     order.total = order.subtotal + order.shipping + order.tax;
 
     console.log('Order details:', order);
     return order;
 }
-
 
 app.get('/order-confirmation', async (req, res) => {
     const orderID = req.query.orderID;
@@ -594,7 +561,7 @@ app.get('/order-confirmation', async (req, res) => {
         }
 
         const customerDetailsQuery = 'SELECT * FROM customer WHERE id = ?';
-        const customerDetailsResult = await queryDB(db, customerDetailsQuery, [orderDetails.customer_id]);
+        const customerDetailsResult = await queryDB(customerDetailsQuery, [orderDetails.customer_id]);
         const customerDetails = customerDetailsResult[0];
 
         res.render('order-confirmation', { orderDetails, customerDetails });
@@ -606,7 +573,7 @@ app.get('/order-confirmation', async (req, res) => {
 
 async function getCustomerDetails(customerID) {
     const query = 'SELECT * FROM customer WHERE id = ?';
-    const results = await queryDB(db, query, [customerID]);
+    const results = await queryDB(query, [customerID]);
     if (results.length === 0) {
         return null;
     }
@@ -628,7 +595,7 @@ app.get('/dashboard', basicAuth, async (req, res) => {
         
         console.log("Executing SQL query for dashboard:", query);
         
-        const results = await queryDB(db, query);
+        const results = await queryDB(query);
         
         console.log("Dashboard query results:", results);
         
@@ -638,7 +605,6 @@ app.get('/dashboard', basicAuth, async (req, res) => {
         res.status(500).send('Server error');
     }
 });
-
 
 app.get('/login', (req, res) => {
     res.render('login');
@@ -676,12 +642,12 @@ app.get('/api/orders', async (req, res) => {
         }
         console.log('Executing SQL query for orders:', query);
         console.log('SQL query parameters:', params);
-        const results = await queryDB(db, query, params);
+        const results = await queryDB(query, params);
 
         // Process results to calculate pictureCount and box inclusion
         const processedResults = await Promise.all(results.map(async order => {
             const itemsQuery = 'SELECT * FROM order_item WHERE order_id = ?';
-            const items = await queryDB(db, itemsQuery, [order.orderID]);
+            const items = await queryDB(itemsQuery, [order.orderID]);
             let pictureCount = 0;
 
             items.forEach(item => {
@@ -709,10 +675,6 @@ app.get('/api/orders', async (req, res) => {
     }
 });
 
-
-
-
-
 app.get('/api/order/:orderID', async (req, res) => {
     const { orderID } = req.params;
 
@@ -735,7 +697,7 @@ app.post('/api/update-order-status', async (req, res) => {
 
     try {
         const query = 'UPDATE customer_order SET order_status = ? WHERE id = ?';
-        await queryDB(db, query, [status, orderID]);
+        await queryDB(query, [status, orderID]);
         res.json({ success: true });
     } catch (error) {
         console.error('Error updating order status:', error);
@@ -748,7 +710,7 @@ app.post('/api/order-status', async (req, res) => {
 
     try {
         const updateOrderStatusQuery = 'UPDATE customer_order SET order_status = ? WHERE id = ?';
-        await queryDB(db, updateOrderStatusQuery, [status, orderID]);
+        await queryDB(updateOrderStatusQuery, [status, orderID]);
         res.json({ success: true });
     } catch (error) {
         console.error('Error updating order status:', error);
@@ -762,17 +724,13 @@ app.post('/api/order-item-status', async (req, res) => {
     try {
         const updateOrderItemStatusQuery = 'UPDATE order_item SET item_status = ? WHERE order_id = ? AND id = ?';
         const newStatus = isChecked ? status : 'pending'; // Assuming 'pending' is the default status
-        await queryDB(db, updateOrderItemStatusQuery, [newStatus, orderID, itemID]);
+        await queryDB(updateOrderItemStatusQuery, [newStatus, orderID, itemID]);
         res.json({ success: true });
     } catch (error) {
         console.error('Error updating order item status:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
-
-
-
-
 
 app.post('/api/resend-stl', async (req, res) => {
     const { orderID, itemID } = req.body;
@@ -784,7 +742,7 @@ app.post('/api/resend-stl', async (req, res) => {
             LEFT JOIN order_item_image oii ON oi.id = oii.order_item_id
             WHERE oi.order_id = ? AND oi.id = ?
         `;
-        const results = await queryDB(db, query, [orderID, itemID]);
+        const results = await queryDB(query, [orderID, itemID]);
 
         if (results.length === 0) {
             return res.status(404).json({ error: 'Item not found in order' });
@@ -807,5 +765,6 @@ app.post('/api/resend-stl', async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
+
