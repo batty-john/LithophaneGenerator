@@ -12,6 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+const ftp = require("basic-ftp");
 
 // Function to create a MySQL connection pool
 const pool = mysql.createPool({
@@ -54,6 +55,14 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50000mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/processed-uploads', express.static(path.join(__dirname, 'processed-uploads')));
 app.use('/finalized-uploads', express.static(path.join(__dirname, 'finalized-uploads')));
+
+// Serve images from remote server
+app.get('/remote-uploads/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const remoteUrl = `https://${process.env.SFTP_HOST}/${process.env.SFTP_REMOTE_DIR}/${filename}`;
+    res.redirect(remoteUrl);
+});
+
 app.use(express.json({ limit: '5000mb' })); // Set limit to handle large payloads
 
 // Basic Authentication Middleware
@@ -162,21 +171,62 @@ async function saveOrderItemImage(details) {
     }
 }
 
+async function ensureDirectory(client, remoteDir) {
+    const parts = remoteDir.split('/');
+    for (let i = 1; i < parts.length; i++) {
+        const part = parts.slice(0, i + 1).join('/');
+        try {
+            await client.ensureDir(part);
+        } catch (err) {
+            console.error(`Error ensuring directory: ${part}`, err);
+            throw err;
+        }
+    }
+}
+
 async function processImage(image, filename) {
+    const localOutputPath = path.join(__dirname, 'processed-uploads', filename);
+    const remoteOutputPath = `/app/${filename}`;
+    const remoteDir = path.dirname(remoteOutputPath);
+
     try {
-        const outputPath = path.join(__dirname, 'processed-uploads', filename);
-        console.log(`Processing image and converting to grayscale, saving to: ${outputPath}`);
+        console.log(`Processing image and converting to grayscale, saving to: ${localOutputPath}`);
         const base64Data = image.split(',')[1];
         const buffer = Buffer.from(base64Data, 'base64');
         const jimpImage = await Jimp.read(buffer);
 
         jimpImage.grayscale();
-        await jimpImage.writeAsync(outputPath);
+        await jimpImage.writeAsync(localOutputPath);
 
-        console.log(`Image processed and saved to: ${outputPath}`);
-        return outputPath;
+        console.log(`Image processed and saved to: ${localOutputPath}`);
+
+        const client = new ftp.Client();
+        client.ftp.verbose = true;
+
+        try {
+            await client.access({
+                host: process.env.FTP_HOST,
+                user: process.env.FTP_USER,
+                password: process.env.FTP_PASS,
+                secure: false // Set to true if you're using FTPS
+            });
+
+            console.log(`Ensuring remote directory exists: ${remoteDir}`);
+            await ensureDirectory(client, remoteDir);
+
+            console.log(`Uploading to remote server: ${remoteOutputPath}`);
+            await client.uploadFrom(localOutputPath, remoteOutputPath);
+            console.log(`Image uploaded to remote server: ${remoteOutputPath}`);
+        } catch (err) {
+            console.error('Error during FTP upload:', err);
+            throw err;
+        } finally {
+            client.close();
+        }
+
+        return remoteOutputPath;
     } catch (error) {
-        console.error('Error processing image:', error);
+        console.error('Error processing image:', error.message);
         throw error;
     }
 }
